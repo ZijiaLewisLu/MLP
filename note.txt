@@ -1,0 +1,5 @@
+#attentive model
+-only model/attentive model.py is needed. other files are useless
+
+-beam search and generative model in M/tf_model/imgCaption
+

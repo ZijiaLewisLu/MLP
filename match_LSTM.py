@@ -139,11 +139,15 @@ class MatchLSTM(BASEModel):
             self.pointer_cell = tf.nn.rnn_cell.BasicLSTMCell(self._hidden_size, state_is_tuple=True)
             self.out_h, self.out_state = self.pointer_cell(inputs, state)
 
+    @property
+    def pointer_zero_state(self):
+        return self.pointer_cell.zero_state(self._batch_size, self.predict.dtype)
+
     def encode_step(self, sess, passage, question):
         return sess.run(fetch=self.H, 
                 feed_dict={ self.passage: passage, self.question:question })
 
-    def inference_step(self, sess, h, state):
-        return sess.run( fetch=[self.predict, self.out_h, self.out_state],
-                feed_dict={ self.in_h:h, self.in_state:state } )
-
+    def inference_step(self, sess, inputs, state):
+        predict, state = sess.run( fetch=[self.predict, self.out_state],
+                feed_dict={ self.in_state:state } )
+        return predict, state, None
