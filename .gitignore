@@ -1,0 +1,10 @@
+*data
+*checkpoint
+*pyc
+*pyo
+*swp
+.ipynb_checkpoints/
+squad/
+memn2n/
+ntm/
+
