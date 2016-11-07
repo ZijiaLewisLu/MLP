@@ -88,7 +88,55 @@ def transform(voca_path, data, qLen=None, pLen=None, aLen=None, shuffle=True):
         p_np.append(_transform_string(p,voca,pLen))
         q_np.append(_transform_string(q,voca,qLen))
         a_np.append(_transform_string(a,voca,aLen))
-    p_np = np.stack(p_np)
-    q_np = np.stack(q_np)
-    a_np = np.stack(a_np)
-    return p_np, q_np, a_np
+    p_np = np.stack(p_np).astype(np.int)
+    q_np = np.stack(q_np).astype(np.int)
+    a_np = np.stack(a_np).astype(np.int)
+
+    order = np.random.shuffle(range(p_np.shape[0]))
+    p_np = p_np[order][0]
+    q_np = q_np[order][0]
+    a_np = a_np[order][0]
+    
+    sparse_answer = locate_answer(p_np,a_np)
+    return p_np, q_np, sparse_answer
+
+def conform(a,b,i,j):
+    if i == len(a):
+        return True
+    if j == len(b):
+        return False
+    if a[i] != b[j]:
+        return False
+    if a[i] == b[j]:
+        return conform(a,b,i+1,j+1)
+    
+def locate_answer(plist,alist):
+    shape = [alist.shape[1]+1, plist.shape[1]+1] # T+1,Q+1
+    answers = []
+    for n in range(len(plist)):
+        idx = []
+        sp = plist[n]; sa = alist[n]
+        i_a =0; i_p = 0
+        while i_a < len(sa) and sa[i_a]!=0: i_a +=1
+        while i_p < len(sp) and sp[i_p]!=0: i_p +=1
+        sa = sa[:i_a]; sp = sp[:i_p]
+        start = []
+        for i in range(len(sp)):
+            if conform(sa, sp, 0, i):
+                start.append(i)
+        for t in range(i_a):
+            idx += [ [t,s+t] for s in start ]
+        idx.append( [i_a,shape[1]-1] )
+        value = [1]*len(idx)
+        answers.append([idx,value,shape])
+    return answers
+
+def load_data():
+    with open('./squad/train-v1.1.json') as f:
+        squad = json.load(f)
+    pair, stat = format_data(squad)
+    p,q,a = transform('./squad/vocab_99036.json', pair)
+    return p, q, a
+
+if __name__ == '__main__':
+    load_data()
