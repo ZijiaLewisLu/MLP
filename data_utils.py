@@ -1,13 +1,15 @@
 import json
-import re
+# import re
 import six
 import numpy as np
-TOKENIZER_RE = re.compile(r"[A-Z]{2,}(?![a-z])|[A-Z][a-z]+(?=[A-Z])|[\'\w\-]+", re.UNICODE)
+# TOKENIZER_RE = re.compile(r"[A-Z]{2,}(?![a-z])|[A-Z][a-z]+(?=[A-Z])|[\'\w\-]+", re.UNICODE)
+from nltk.tokenize import RegexpTokenizer 
+word_tokenize = RegexpTokenizer(r'\w+').tokenize
 
 def format_data(js):
     """
     stat -> { title: (# paragraph, # qas)}
-    pairs -> [ [context, [(q,a),..]], .. ]
+    pairs -> [ [context, [(q,a,start),..]], .. ]
     """
     data_list = js['data']
     pairs = []
@@ -21,7 +23,7 @@ def format_data(js):
                 q = qa['question'] # unicode string
                 a = qa['answers']  # list of dicts
                 assert len(a)==1, a
-                qas.append( (q.lower().strip(), a[0]['text'].lower().strip()) ) # pairs of unicode strings
+                qas.append( (q.lower().strip(), a[0]['text'].lower().strip(), int(a[0]['answer_start'])) ) # pairs of unicode strings
             qa_count += len(qas)
             pairs.append([context, qas])
         
@@ -29,10 +31,9 @@ def format_data(js):
     return pairs, stat
 
 def create_vocab(pairs, cap=None):
-    token_filter = TOKENIZER_RE
-    X = [ c + ' '.join([ q+' '+a for q,a in qas ])  for c, qas in pairs ]
+    X = [ c + ' '.join([ q+' '+a for q,a,s in qas ])  for c, qas in pairs ]
     X = '  '.join(X)
-    X = token_filter.findall(X)
+    X = word_tokenize(X)
 
     # calculate frequency
     f = {}
@@ -66,16 +67,29 @@ def transform(voca_path, data, qLen=None, pLen=None, aLen=None, shuffle=True):
     ql = 0
     pl = 0
     al = 0
-    for p, qas in data:
-        p = TOKENIZER_RE.findall(p)
+    f = open('transform_error.log','w')
+    for index , _ in enumerate(data):
+        p, qas = _
+        p_ = p
+        p = word_tokenize(p)
         if len(p) > pl: pl = len(p)
-        for q,a in qas:
-            q = TOKENIZER_RE.findall(q)
-            a = TOKENIZER_RE.findall(a)
+        for q,a,s in qas:
+            q = word_tokenize(q)
+
+            a = word_tokenize(a)
+            start = len(word_tokenize(p_[:s]))
+            indexs = [ start+i for i in range(len(a)) ]
+            try:
+                [ p[_] for _ in indexs ]
+            except Exception:
+                continue
+                # print index, e
+                # f.write(str(index)+'  '+str(e)+'\n')
+            # if test != a: print index, a, '--------------', test; f.write(str(index)+'\n')
+
             if len(q)>ql: ql=len(q)
             if len(a)>al: al=len(a)
-            triple.append([p,q,a])
-                
+            triple.append([p,q,indexs])         
     if qLen is None or ql<qLen: qLen = ql
     if pLen is None or pl<pLen: pLen = pl
     if aLen is None or al<aLen: aLen = al
@@ -83,60 +97,31 @@ def transform(voca_path, data, qLen=None, pLen=None, aLen=None, shuffle=True):
         voca = json.load(f)
     q_np = []
     p_np = []
-    a_np = []
-    for p,q,a in triple:
+    a_idx = []
+    for ni in np.random.shuffle(range(len(triple))):
+        p,q,aid = triple[ni]
         p_np.append(_transform_string(p,voca,pLen))
         q_np.append(_transform_string(q,voca,qLen))
-        a_np.append(_transform_string(a,voca,aLen))
+
+        aid.append(pLen)
+        a_idx += [  [ni,t,wid] for t, wid in enumerate(aid) ]
+
     p_np = np.stack(p_np).astype(np.int)
     q_np = np.stack(q_np).astype(np.int)
-    a_np = np.stack(a_np).astype(np.int)
-
-    order = np.random.shuffle(range(p_np.shape[0]))
-    p_np = p_np[order][0]
-    q_np = q_np[order][0]
-    a_np = a_np[order][0]
     
-    sparse_answer = locate_answer(p_np,a_np)
+    sparse_answer = [ [1]*len(a_idx), a_idx, [len(a_idx), aLen+1, pLen+1] ] # values, idx, shape
     return p_np, q_np, sparse_answer
 
-def conform(a,b,i,j):
-    if i == len(a):
-        return True
-    if j == len(b):
-        return False
-    if a[i] != b[j]:
-        return False
-    if a[i] == b[j]:
-        return conform(a,b,i+1,j+1)
-    
-def locate_answer(plist,alist):
-    shape = [alist.shape[1]+1, plist.shape[1]+1] # T+1,Q+1
-    answers = []
-    for n in range(len(plist)):
-        idx = []
-        sp = plist[n]; sa = alist[n]
-        i_a =0; i_p = 0
-        while i_a < len(sa) and sa[i_a]!=0: i_a +=1
-        while i_p < len(sp) and sp[i_p]!=0: i_p +=1
-        sa = sa[:i_a]; sp = sp[:i_p]
-        start = []
-        for i in range(len(sp)):
-            if conform(sa, sp, 0, i):
-                start.append(i)
-        for t in range(i_a):
-            idx += [ [t,s+t] for s in start ]
-        idx.append( [i_a,shape[1]-1] )
-        value = [1]*len(idx)
-        answers.append([idx,value,shape])
-    return answers
-
-def load_data():
-    with open('./squad/train-v1.1.json') as f:
+def load_data(js='./squad/train-v1.1.json', voca='./squad/voca_82788.json'):
+    with open(js,'r') as f:
         squad = json.load(f)
     pair, stat = format_data(squad)
-    p,q,a = transform('./squad/vocab_99036.json', pair)
+    p,q,a = transform(voca, pair)
     return p, q, a
 
 if __name__ == '__main__':
-    load_data()
+    voca = './squad/voca_82788.json'
+    with open('./squad/train-v1.1.json') as f:
+        squad = json.load(f)
+    pair, stat = format_data(squad)
+    transform(voca, pair)

@@ -6,3 +6,5 @@
 .ipynb_checkpoints/
 contrib
 squad
+*.ipynb
+*.log
