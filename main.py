@@ -1,31 +1,44 @@
 import tensorflow as tf
+import sys
 from match_LSTM import MatchLSTM
 import data_utils as D
-import json
+# import json
 
+num_epoch = 20
 batch_size = 10
-vocab_size = 99036
+vocab_size = 82788
+small_size = 50
+learning_rate = 1e-2
 
 # prepare data
-with open('./squad/train-v1.1.json') as f:
-    squad = json.load(f)
-pair, _ = D.format_data(squad)
-p,q,a = D.transform('./squad/vocab_99036.json', pair)
+p, q, a = D.load_data()
+if small_size is not None:
+    p = p[:small_size]
+    q = q[:small_size]
+    a = a[:small_size]
+p_length = p.shape[1]
+q_length = q.shape[1]
+a_length = a.shape[1]
+print 'Sir, data are ready!'
+print p_length, p_length, a_length
+sys.stdout.flush()
 
 # build model
 g = tf.Graph()
 sess = tf.Session()
-q_length = q.shape[1]
-p_length = p.shape[1]
-print q_length, p_length
-model = MatchLSTM(vocab_size,p_length, q_length, batch_size)
-model.build_model()
+model = MatchLSTM(p_length, q_length, a_length, batch_size, vocab_size)
 
-# forward once
+model.assign_optim(tf.train.GradientDescentOptimizer(learning_rate))
+
+model.build_model()
 init = tf.initialize_all_variables()
 sess.run(init)
-print 'Start Forwarding'
-answer = sess.run( model.answer, 
-                    feed_dict={ model.passage: p[:batch_size], model.question:q[:batch_size] } )
-print answer.shape
-print answer
+print 'Sir, model inited'
+sys.stdout.flush()
+
+for e in range(num_epoch):
+    bi = D.batchIter(batch_size, [p, q, a])
+    for b, batch in enumerate(bi):
+        batch.insert(0, sess)
+        pre, acc, loss = model.step(*batch)
+        print 'E%d B%d acc %0.3f loss %0.3f' % (e, b, acc, loss)

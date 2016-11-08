@@ -13,10 +13,10 @@ class BASEModel():
     def inference_step(self):
         raise NotImplementedError()
 
-class MatchLSTM(BASEModel):
+class MatchLSTM():
     
-    def __init__(self, vocab_size, p_length, q_length, batch_size, 
-                    embedding_size=128, hidden_size=128, max_answer_length=50):
+    def __init__(self, p_length, q_length, a_length, batch_size, vocab_size,
+                    embedding_size=128, hidden_size=128):
         """
         vocab_size, question_length, passage_length, batch_size, embedding_size=128, hidden_size=128
         """
@@ -26,7 +26,14 @@ class MatchLSTM(BASEModel):
         self._voca_size = vocab_size
         self._batch_size = batch_size
         self._p_length = p_length
-        self._max_answer_length = max_answer_length
+        self._a_length = a_length
+
+        self.passage = None
+        self.question = None
+        self.answer = None
+
+        self.optim = None
+        self.train_op = None
 
     def match_unit(self, direction, param):
         Wp, Wr, Bg, WHq, H_p, Wt, Ba, hq_stack = param
@@ -53,21 +60,23 @@ class MatchLSTM(BASEModel):
                 H.append(h)
         return H
     
+    def assign_optim(self, optim):
+        self.optim = optim
+
     def build_model(self):
+        assert self.optim is not None
 
         self.passage = tf.placeholder(tf.int64, shape=[self._batch_size, self._p_length])
         self.question = tf.placeholder(tf.int64, shape=[self._batch_size, self._q_length])
-        self.answers = tf.placeholder(tf.int64)
+        self.answer = tf.placeholder(tf.int64, shape=[self._batch_size, self._a_length])
 
         with tf.variable_scope('embedding'):
-            W_p = tf.get_variable('W_p', shape=[self._voca_size, self._embedding_size])
-            W_q = tf.get_variable('W_q', shape=[self._voca_size, self._embedding_size])
-            p = tf.nn.embedding_lookup(W_p, tf.transpose(self.passage), name='p_embed') # P,N,E 
-            qs = tf.nn.embedding_lookup(W_q, tf.transpose(self.question), name='q_embed') # Q,N,E
+            E_p = tf.get_variable('E_p', shape=[self._voca_size, self._embedding_size])
+            E_q = tf.get_variable('E_q', shape=[self._voca_size, self._embedding_size])
+            p = tf.nn.embedding_lookup(E_p, tf.transpose(self.passage), name='p_embed') # P,N,E 
+            qs = tf.nn.embedding_lookup(E_q, tf.transpose(self.question), name='q_embed') # Q,N,E
 
-        # as = tf.unpack(self.answers)
         with tf.variable_scope('preprocess'):
-            # print 'p shape', p.get_shape()
             p = tf.unpack(p)
             qs = tf.unpack(qs)
 
@@ -114,7 +123,6 @@ class MatchLSTM(BASEModel):
             H.append(STOP)
             self.H=H
 
-        # No Forloop in pointer, handle from outside
         with tf.variable_scope('pointer') as scope:
             # calculate VH for all future use
             V = tf.get_variable('V', shape=[2*self._hidden_size, self._hidden_size])
@@ -131,26 +139,49 @@ class MatchLSTM(BASEModel):
             self.pointer_cell = tf.nn.rnn_cell.BasicLSTMCell(self._hidden_size, state_is_tuple=True)
             state = self.pointer_cell.zero_state(self._batch_size, H.dtype)
             h = state.h
-            answer = []
-            for step in range(self._max_answer_length):
+            score = []
+            # self.predict = []
+            for step in range(self._a_length):
                 if step>0: scope.reuse_variables()
                 F  = tf.matmul(h,Wf)+Bf # N, Hidden_size
                 F  = tf.tanh( HV+tf.expand_dims(F,1) ) # N,P+1,Hidden_size
-                self.predict = beta = tf.nn.softmax( tf.reduce_sum( F*vt, 2 )+c ) # N, P+1
-                answer.append(tf.argmax(beta, 1))
+                beta = tf.nn.softmax( tf.reduce_sum( F*vt, 2 )+c ) # N,P+1
+                score.append(beta)
+
                 inputs = tf.reduce_sum(H_*tf.expand_dims(beta, 2), 2)
                 h, state = self.pointer_cell(inputs, state)
-            self.answer = tf.pack(answer,1) 
+        
+        self.score = tf.pack(score,1) #N,A,P+1
+        self.prediction = tf.argmax(self.score,2, name='prediction')
+        
+        self.loss = tf.nn.sparse_softmax_cross_entropy_with_logits(self.score, self.answer, name='softmax_loss')
+        self.loss = tf.reduce_mean(self.loss)
+
+        correct_predictions = tf.equal(self.prediction, self.answer)
+        self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
+
+        self.train_op = self.optim.minimize(self.loss)
     
     @property
     def pointer_zero_state(self):
         return self.pointer_cell.zero_state(self._batch_size, self.predict.dtype)
 
-    def encode_step(self, sess, passage, question):
-        return sess.run(fetch=self.H, 
-                feed_dict={ self.passage: passage, self.question:question })
+    def step(self, sess, passage, question, answer, train=True):
+        """
+        Input: session, passage, question, answer
+        Output: 
+        if train==True: predictions, accuracy, loss
+        else: predictions
+        """
+        if train:
+            assert self.train_op is not None
+            result = sess.run(
+                fetches=[self.train_op, self.prediction, self.accuracy, self.loss],
+                feed_dict={ self.passage: passage, self.question: question, self.answer:answer})
+            result = result[1:]
 
-    def inference_step(self, sess, inputs, state):
-        predict, state = sess.run( fetch=[self.predict, self.out_state],
-                feed_dict={ self.in_state:state } )
-        return predict, state, None
+        else:
+            result = sess.run(
+                fetches=[self.prediction],
+                feed_dict={ self.passage:passage, self.question:question})
+        return result
