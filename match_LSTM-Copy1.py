@@ -69,8 +69,8 @@ class MatchLSTM():
 
         self.passage = tf.placeholder(tf.int64, shape=[self._batch_size, self._p_length])
         self.question = tf.placeholder(tf.int64, shape=[self._batch_size, self._q_length])
-        # shape = tf.convert_to_tensor([self._batch_size, self._a_length, self._p_length+1], dtype=tf.int64)
-        self.answer = tf.placeholder(tf.float32, shape=[self._batch_size, self._a_length, self._p_length+1])
+        shape = tf.convert_to_tensor([self._batch_size, self._a_length, self._p_length+1], dtype=tf.int64)
+        self.answer = tf.sparse_placeholder(tf.float32, shape=shape)
 
         with tf.variable_scope('embedding'):
             E_p = tf.get_variable('E_p', shape=[self._voca_size, self._embedding_size])
@@ -154,44 +154,28 @@ class MatchLSTM():
                 h, state = self.pointer_cell(inputs, state)
         
         epsilon = tf.constant(value=0.00001, shape=[self._p_length+1])
-        self.score = tf.pack(score,1) + epsilon #N,A,P+1
-        # self.score = tf.nn.softmax(self.score, name='softmax') 
+        self.score = tf.pack(score,1) + epsilon 
+        self.score = tf.nn.softmax(self.score, name='softmax') #N,A,P+1
+
         self.prediction = tf.argmax(self.score,2,name='prediction')
         # correct_predictions = tf.equal(self.prediction, self.answer)
         # self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
 
-        self.loss = tf.nn.softmax_cross_entropy_with_logits(self.score, self.answer, name='softmax_loss')
-        # y = tf.sparse_tensor_to_dense(self.answer)
-        # y = self.answer
-        # y_ = tf.log(self.score)
+        # self.loss = tf.nn.sparse_softmax_cross_entropy_with_logits(score, self.answer, name='softmax_loss')
+        y = tf.sparse_tensor_to_dense(self.answer)
+        y_ = tf.log(self.score)
         # print y.dtype, y_.dtype
         # print y.get_shape().as_list(),  y_.get_shape().as_list(), self.score.get_shape().as_list()
         # yy_ = y*y_
         # print yy_
-        
-        self.grads_and_vars = self.optim.compute_gradients(self.loss)
-        self.train_op = self.optim.apply_gradients(self.grads_and_vars)
 
-        # self.loss = -tf.reduce_mean(y*y_)
+        self.loss = -tf.reduce_mean(y*y_)
 
-        print 'In test mode:', self._test
         if not self._test:
             self.train_op = self.optim.minimize(self.loss) 
         else:
             self.train_op = self.loss
     
-    def contruct_summaries(self):
-        grad_summaries = []
-        for g, v in self.grads_and_vars:
-            if g is not None:
-                grad_hist_summary = tf.histogram_summary("{}/grad/hist".format(v.name), g)
-                sparsity_summary = tf.scalar_summary("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
-                grad_summaries.append(grad_hist_summary)
-                grad_summaries.append(sparsity_summary)
-        grad_summaries_merged = tf.merge_summary(grad_summaries)
-        predict_summaries = tf.histogram_summary("prediction", self.prediction)
-        self.summaries = tf.merge_summary([grad_summaries_merged, predict_summaries])
-        return self.summaries
 
     def step(self, sess, passage, question, answer, train=True):
         """

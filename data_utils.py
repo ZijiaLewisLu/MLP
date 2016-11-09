@@ -1,8 +1,6 @@
 import json
-# import re
 import six
 import numpy as np
-# TOKENIZER_RE = re.compile(r"[A-Z]{2,}(?![a-z])|[A-Z][a-z]+(?=[A-Z])|[\'\w\-]+", re.UNICODE)
 from nltk.tokenize import RegexpTokenizer
 word_tokenize = RegexpTokenizer(r'\w+').tokenize
 
@@ -10,27 +8,26 @@ word_tokenize = RegexpTokenizer(r'\w+').tokenize
 def format_data(js):
     """
     stat -> { title: (# paragraph, # qas)}
-    pairs -> [ [context, [(q,a,start),..]], .. ]
+    pairs -> [ (context,q,a,start),.. ]
     """
     data_list = js['data']
-    pairs = []
-    stat = {}
+    fours = []
+    # stat = {}
     for article in data_list:
-        qa_count = 0
+        # qa_count = 0
         for passage in article['paragraphs']:
             context = passage['context'].lower().strip()  # unicode string
-            qas = []
             for qa in passage['qas']:
                 q = qa['question']  # unicode string
-                a = qa['answers']  # list of dicts
+                a = qa['answers']   # list of dicts
                 assert len(a) == 1, a
-                qas.append((q.lower().strip(), a[0]['text'].lower().strip(), int(
-                    a[0]['answer_start'])))  # pairs of unicode strings
-            qa_count += len(qas)
-            pairs.append([context, qas])
-
-        stat[article['title']] = (len(article['paragraphs']), qa_count)
-    return pairs, stat
+                fours.append((
+                    context,
+                    q.lower().strip(), 
+                    a[0]['text'].lower().strip(), 
+                    int(a[0]['answer_start']))) 
+        # stat[article['title']] = (len(article['paragraphs']), qa_count)
+    return fours
 
 
 def create_vocab(pairs, cap=None):
@@ -74,33 +71,31 @@ def transform(voca_path, data, qLen=None, pLen=None, aLen=None):
     ql = 0
     pl = 0
     al = 0
-    f = open('transform_error.log', 'w')
+    # f = open('transform_error.log', 'w')
     for index, _ in enumerate(data):
-        p, qas = _
-        p_ = p
-        p = word_tokenize(p)
-        if len(p) > pl:
-            pl = len(p)
-        for q, a, s in qas:
-            q = word_tokenize(q)
+        p, q, a, s = _
 
-            a = word_tokenize(a)
-            start = len(word_tokenize(p_[:s]))
-            indexs = [start + i for i in range(len(a))]
-            try:
-                [p[_] for _ in indexs]
-            except Exception:
-                continue
+        start = len(word_tokenize(p[:s]))
+        a = word_tokenize(a)
+        indexs = [start + i for i in range(len(a))] #
+
+        p = word_tokenize(p)
+        q = word_tokenize(q)
+        try:
+            [p[_] for _ in indexs]
+        except Exception:
+            continue
                 # print index, e
                 # f.write(str(index)+'  '+str(e)+'\n')
             # if test != a: print index, a, '--------------', test;
             # f.write(str(index)+'\n')
-
-            if len(q) > ql:
-                ql = len(q)
-            if len(a) > al:
-                al = len(a)
-            triple.append([p, q, indexs])
+        if len(p) > pl:
+            pl = len(p)
+        if len(q) > ql:
+            ql = len(q)
+        if len(a) > al:
+            al = len(a)
+        triple.append([p, q, indexs])
 
     if qLen is None or ql < qLen:
         qLen = ql
@@ -126,23 +121,22 @@ def transform(voca_path, data, qLen=None, pLen=None, aLen=None):
 
     p_np = np.stack(p_np).astype(np.int)  # N,pLen
     q_np = np.stack(q_np).astype(np.int)
-    a_np = np.stack(q_np).astype(np.int)  # N,aLen+1
-
+    a_np = np.stack(a_np).astype(np.int)  # N,aLen+1
     return p_np, q_np, a_np
 
 
 def load_data(js='./squad/train-v1.1.json', voca='./squad/voca_82788.json'):
     with open(js, 'r') as f:
         squad = json.load(f)
-    pair, stat = format_data(squad)
-    p, q, a = transform(voca, pair)
+    fours = format_data(squad)
+    p, q, a = transform(voca, fours)
     return p, q, a
 
 
 def batchIter(batch_size, datas, shuffle=True):
     if not isinstance(datas, list):
-        datas = [datas]
-
+        datas = [datas]      
+    
     N = len(datas[0])
     order = range(N)
     if shuffle:
