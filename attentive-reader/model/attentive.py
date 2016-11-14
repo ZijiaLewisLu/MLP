@@ -17,7 +17,7 @@ class AttentiveReader(Model):
                  learning_rate=1e-4, batch_size=32,
                  dropout=0.1, max_time_unit=100,
                  max_nsteps=1000,
-                 max_query_length=50,
+                 max_query_length=31,
                  ):
         """Initialize the parameters for an  Attentive Reader model.
 
@@ -47,37 +47,43 @@ class AttentiveReader(Model):
             tf.int32, [self.batch_size, self.max_nsteps])
         self.query = tf.placeholder(
             tf.int32, [self.batch_size, self.max_query_length])
+        self.d_end = tf.placeholder(tf.int32, self.batch_size)
+        self.q_end = tf.placeholder(tf.int32, self.batch_size)
         self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size])
 
         # Embeding
         self.emb = tf.get_variable("emb", [self.vocab_size, self.size])
-        # shape: sentence_length, batch_size, embedding_size
-        embed_d = tf.nn.embedding_lookup(self.emb, tf.transpose(self.document))
-        # shape: sentence_length, batch_size, embedding_size
-        embed_q = tf.nn.embedding_lookup(self.emb, tf.transpose(self.query))
-        embed_d, embed_q = tf.unpack(embed_d), tf.unpack(embed_q)
-        tf.histogram_summary("embed", self.emb)
+        # shape: batch_size, sentence_length, embedding_size
+        embed_d = tf.nn.embedding_lookup(self.emb, self.document)
+        # shape: batch_size, sentence_length, embedding_size
+        embed_q = tf.nn.embedding_lookup(self.emb, self.query)
+        # tf.histogram_summary("embed", self.emb)
 
         # representation
         with tf.variable_scope("document_represent"):
-            d_t, d_foward_final_state, d_backward_final_state, = tf.nn.bidirectional_rnn(
+            # d_t: N, T, Hidden
+            d_t, d_final_state, = tf.nn.bidirectional_dynamic_rnn(
                 rnn_cell.BasicLSTMCell(
                     self.size, forget_bias=0.0, state_is_tuple=True),
                 rnn_cell.BasicLSTMCell(
                     self.size, forget_bias=0.0, state_is_tuple=True),
-                embed_d, dtype=tf.float32)
+                embed_d, 
+                sequence_length=self.d_end, dtype=tf.float32)
+            d_t = tf.concat(2, d_t)
+            d_t = tf.unpack(d_t, axis=1)
+
         with tf.variable_scope("query_represent"):
-            q_t, q_foward_final_state, q_backward_final_state, = tf.nn.bidirectional_rnn(
+            q_t, q_final_state, = tf.nn.bidirectional_dynamic_rnn(
                 rnn_cell.BasicLSTMCell(
                     self.size, forget_bias=0.0, state_is_tuple=True),
                 rnn_cell.BasicLSTMCell(
                     self.size, forget_bias=0.0, state_is_tuple=True),
-                embed_q, dtype=tf.float32)
-
-        _, q_0_b = tf.split(1, 2, q_t[0])
-        q_T_f, _ = tf.split(1, 2, q_t[-1])
-        u = tf.concat(1, [q_T_f, q_0_b])
-
+                embed_q, 
+                sequence_length=self.q_end, dtype=tf.float32)
+            q_f = tf.unpack(q_t[0], axis=1)
+            q_b = tf.unpack(q_t[-1], axis=1)
+            u = tf.concat(1, [q_f[-1], q_b[0]])
+       
         # attention
         W_ym = tf.get_variable('W_ym', [2 * self.size, 1])
         W_um = tf.get_variable('W_um', [2 * self.size, 1])
@@ -97,7 +103,7 @@ class AttentiveReader(Model):
         # mid = tf.contrib.layers.batch_norm(mid)
         # g = tf.tanh(mid)
         g = tf.nn.relu(mid)
-        tf.histogram_summary( 'before tanh', tf.reduce_mean(mid))
+        tf.scalar_summary('before activitation', tf.reduce_mean(mid))
 
         self.loss = tf.nn.softmax_cross_entropy_with_logits(g, self.y, name='loss')
         tf.scalar_summary("loss", tf.reduce_sum(self.loss))
@@ -118,13 +124,14 @@ class AttentiveReader(Model):
         # Creat Loss Function
         start = time.clock()
         print(" [*] Calculating gradient and loss...")
-        self.optim = tf.train.AdamOptimizer(learning_rate, 0.9, name='optimizer')
+        # self.optim = tf.train.AdamOptimizer(learning_rate, 0.9, name='optimizer')
+        self.optim = tf.train.GradientDescentOptimizer( learning_rate, name='optimizer')
         self.grad_and_var = self.optim.compute_gradients(self.loss)
         for g, v in self.grad_and_var:
+            tf.scalar_summary( "{}-var/mean".format(v.name), tf.reduce_mean(v) )
+            tf.check_numerics(v, v.name)
             if g is not None:
                 tf.scalar_summary( "{}-grad/mean".format(v.name), tf.reduce_mean(g) )
-                tf.scalar_summary( "{}-var/mean".format(v.name), tf.reduce_mean(v) )
-                # tf.histogram_summary("{}-variable".format(v.name),v)
         self.train_op = self.optim.apply_gradients(self.grad_and_var, name='train_op')
 
         self.vname = [ v.name for g,v in self.grad_and_var ]
@@ -136,6 +143,7 @@ class AttentiveReader(Model):
         # Summary
         merged = tf.merge_all_summaries()
         writer = tf.train.SummaryWriter(log_dir, sess.graph)
+        print(" [*] Writing log to %s" % log_dir )
 
         # Saver and Load
         self.saver = tf.train.Saver()
@@ -156,10 +164,12 @@ class AttentiveReader(Model):
                                         vocab_size, self.batch_size, self.max_nsteps, self.max_query_length, size=3000)
             
             # train
-            for batch_idx, docs, queries, y in train_iter:
+            for batch_idx, docs, d_end, queries, q_end, y in train_iter:
                 _, summary_str, cost, accuracy, vars = sess.run([self.train_op, merged, self.loss, self.accuracy, self.vars ],
                                                       feed_dict={self.document: docs,
                                                                  self.query: queries,
+                                                                 self.d_end: d_end,
+                                                                 self.q_end: q_end,
                                                                  self.y: y}) 
                 # for i in range(len(self.vname)):
                     # tmp = np.mean( vars[i] )

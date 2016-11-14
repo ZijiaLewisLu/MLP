@@ -4,6 +4,7 @@ run
 log
 cache
 squad
+contrib
 
 *pyc
 *pyo

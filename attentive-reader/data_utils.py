@@ -248,6 +248,10 @@ def data_iter(flist, max_nstep, max_query_step, batch_size=None, vocab_size=2645
   y = np.zeros([batch_size, vocab_size])
   ds = np.zeros([batch_size, max_nstep])
   qs = np.zeros([batch_size, max_query_step])
+
+  d_length = np.zeros( [batch_size], dtype=np.int)
+  q_length = np.zeros( [batch_size], dtype=np.int)
+
   for s in range(steps):
     head = s*batch_size
     end  = (s+1)*batch_size
@@ -259,34 +263,34 @@ def data_iter(flist, max_nstep, max_query_step, batch_size=None, vocab_size=2645
     y.fill(0)
     ds.fill(0)
     qs.fill(0)
-
+    
     for idx, fname in enumerate(files):
       with open(fname) as f:
         _, document, question, answer, _ =  f.read().split("\n\n")
 
-      document = np.array([int(d) for d in document.split()])
-      question = np.array([int(q) for q in question.split()])
+      document = [int(d) for d in document.split()]
+      question = [int(q) for q in question.split()]
+       
 
       if len(document) > max_nstep:
         ds[idx] = document[:max_nstep]
+        d_length[idx] = max_nstep
       else:
         ds[idx][:len(document)] = document
+        d_length[idx] = len(document)
 
       if len(question) > max_query_step:
         qs[idx] = question[:max_query_step]
+        q_length[idx] = max_query_step 
       else:
         qs[idx][:len(question)] = question
-
+        q_length[idx] = len(question)
 
       y[idx][int(answer)] = 1
 
-    yield s, ds, qs, y
-
-
+    yield s, ds, d_length, qs, q_length, y
 
 def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_query_step, split_rate=0.9, size=None):
-  # name = os.path.join(data_dir, dataset_name, "questions",
-  #                                 "training", "*.question.ids%s_*" % (vocab_size))
   files = glob(os.path.join(data_dir, dataset_name, "questions",
                                   "training", "*.question.ids%s_*" % (vocab_size)))
   max_idx = len(files)
