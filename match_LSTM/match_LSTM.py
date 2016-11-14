@@ -16,8 +16,9 @@ class BASEModel():
 class MatchLSTM():
     
     def __init__(self, p_length, q_length, a_length, batch_size, vocab_size,
-                    embedding_size=64, hidden_size=64, learning_rate=1e-4, optim=tf.train.GradientDescentOptimizer,
-                    test=False):
+                    embedding_size=64, hidden_size=64, learning_rate=1e-4, 
+                    optim=tf.train.GradientDescentOptimizer
+                    ):
         """
         vocab_size, question_length, passage_length, batch_size, embedding_size=128, hidden_size=128
         """
@@ -36,8 +37,6 @@ class MatchLSTM():
         self.learning_rate = learning_rate
         self.optim = optim(learning_rate)
         self.train_op = None
-
-        self._test = test
 
     def match_unit(self, direction, param):
         Wp, Wr, Bg, WHq, H_p, Wt, Ba, hq_stack = param
@@ -147,8 +146,10 @@ class MatchLSTM():
                 if step>0: scope.reuse_variables()
                 F  = tf.matmul(h,Wf)+Bf # N, Hidden_size
                 F  = tf.tanh( HV+tf.expand_dims(F,1) ) # N,P+1,Hidden_size
-                beta = tf.nn.softmax( tf.reduce_sum( F*vt, 2 )+c ) # N,P+1
+                beta = tf.reduce_sum( F*vt, 2 )+c
+                beta = tf.nn.softmax( beta ) # N,P+1
                 score.append(beta)
+
 
                 inputs = tf.reduce_sum(H_*tf.expand_dims(beta, 2), 2)
                 h, state = self.pointer_cell(inputs, state)
@@ -160,7 +161,8 @@ class MatchLSTM():
         # correct_predictions = tf.equal(self.prediction, self.answer)
         # self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
 
-        self.loss = tf.nn.softmax_cross_entropy_with_logits(self.score, self.answer, name='softmax_loss')
+        # self.loss = tf.nn.softmax_cross_entropy_with_logits(self.score, self.answer, name='softmax_loss')
+        self.loss = -tf.reduce_sum(self.answer*tf.log(self.score))
         # y = tf.sparse_tensor_to_dense(self.answer)
         # y = self.answer
         # y_ = tf.log(self.score)
@@ -171,14 +173,6 @@ class MatchLSTM():
         
         self.grads_and_vars = self.optim.compute_gradients(self.loss)
         self.train_op = self.optim.apply_gradients(self.grads_and_vars)
-
-        # self.loss = -tf.reduce_mean(y*y_)
-
-        print 'In test mode:', self._test
-        if not self._test:
-            self.train_op = self.optim.minimize(self.loss) 
-        else:
-            self.train_op = self.loss
     
     def contruct_summaries(self):
         grad_summaries = []
@@ -204,7 +198,7 @@ class MatchLSTM():
             # print '.....\n', answer
             assert self.train_op is not None
             result = sess.run(
-                fetches=[self.train_op, self.score, self.loss],
+                fetches=[self.train_op, self.score, self.loss,],
                 feed_dict={ self.passage: passage, self.question: question, self.answer:answer})
             result = result[1:]
 
