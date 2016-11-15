@@ -150,6 +150,7 @@ class AttentiveReader(Model):
         if load_path is not None:
             fname = tf.train.latest_checkpoint(os.path.join(load_path, 'ckpts'))
             assert fname is not None 
+            print(" [*] Loading %s"% fname)
             self.saver.restore(sess, fname)
             print(" [*] Checkpoint is loaded.")
 
