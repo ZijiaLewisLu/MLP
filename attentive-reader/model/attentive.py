@@ -185,7 +185,7 @@ class AttentiveReader(Model):
             running_acc = 0
             running_loss = 0 
             for batch_idx, docs, d_end, queries, q_end, y in validate_iter:
-                cost, accuracy, vars = sess.run([self.loss, self.accuracy, self.vars],
+                cost, accuracy = sess.run([self.loss, self.accuracy ],
                                           feed_dict={self.document: docs,
                                                      self.query: queries,
                                                      self.d_end: d_end,
@@ -198,6 +198,8 @@ class AttentiveReader(Model):
             LOSS.append(running_loss/vsteps)
             print("Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f"
                       %(epoch_idx, time.time()-start_time, running_loss/vsteps, running_acc/vsteps))
+
+            vars = sess.run(self.vars)
             for n,v in zip(self.vname, vars):
                 print("%s mean: %.4f var: %.4f max: %.4f min: %.4f" % 
                         (n, np.mean(v), np.var(v), np.max(v), np.min(v)) )
