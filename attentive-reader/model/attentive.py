@@ -57,7 +57,7 @@ class AttentiveReader(Model):
         embed_d = tf.nn.embedding_lookup(self.emb, self.document)
         # shape: batch_size, sentence_length, embedding_size
         embed_q = tf.nn.embedding_lookup(self.emb, self.query)
-        # tf.histogram_summary("embed", self.emb)
+        tf.histogram_summary("embed", self.emb)
 
         # representation
         with tf.variable_scope("document_represent"):
@@ -106,7 +106,7 @@ class AttentiveReader(Model):
         tf.scalar_summary('before activitation', tf.reduce_mean(mid))
 
         self.loss = tf.nn.softmax_cross_entropy_with_logits(g, self.y, name='loss')
-        tf.scalar_summary("loss", tf.reduce_sum(self.loss))
+        tf.scalar_summary("loss", tf.reduce_mean(self.loss))
 
         correct_prediction = tf.equal(tf.argmax(self.y, 1), tf.argmax(g, 1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
@@ -128,10 +128,10 @@ class AttentiveReader(Model):
         self.optim = tf.train.GradientDescentOptimizer( learning_rate, name='optimizer')
         self.grad_and_var = self.optim.compute_gradients(self.loss)
         for g, v in self.grad_and_var:
-            tf.scalar_summary( "{}-var/mean".format(v.name), tf.reduce_mean(v) )
+            tf.scalar_summary( "I_{}-var/mean".format(v.name), tf.reduce_mean(v) )
             tf.check_numerics(v, v.name)
             if g is not None:
-                tf.scalar_summary( "{}-grad/mean".format(v.name), tf.reduce_mean(g) )
+                tf.scalar_summary( "I_{}-grad/mean".format(v.name), tf.reduce_mean(g) )
         self.train_op = self.optim.apply_gradients(self.grad_and_var, name='train_op')
 
         self.vname = [ v.name for g,v in self.grad_and_var ]
@@ -149,6 +149,7 @@ class AttentiveReader(Model):
         self.saver = tf.train.Saver()
         if load_path is not None:
             fname = tf.train.latest_checkpoint(os.path.join(load_path, 'ckpts'))
+            assert fname is not None 
             self.saver.restore(sess, fname)
             print(" [*] Checkpoint is loaded.")
 
@@ -188,18 +189,19 @@ class AttentiveReader(Model):
                                                      self.d_end: d_end,
                                                      self.q_end: q_end,
                                                      self.y: y})
-                for n,v in zip(self.vname, vars):
-                    print("%s mean: %.4f var: %.4f max: %.4f min: %.4f" % 
-                            (n, np.mean(v), np.var(v), np.max(v), np.min(v)) )
                 running_acc += accuracy
                 running_loss += np.mean(cost)
+
             ACC.append(running_acc/vsteps)
             LOSS.append(running_loss/vsteps)
-            print("Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f\n\n"
+            print("Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f"
                       %(epoch_idx, time.time()-start_time, running_loss/vsteps, running_acc/vsteps))
-
-        if epoch_idx % 5 == 0:
-            self.save(sess, log_dir, dataset_name, global_step=counter)
+            for n,v in zip(self.vname, vars):
+                print("%s mean: %.4f var: %.4f max: %.4f min: %.4f" % 
+                        (n, np.mean(v), np.var(v), np.max(v), np.min(v)) )
+            if epoch_idx % 3 == 0:
+                self.save(sess, log_dir, dataset_name, global_step=counter)
+            print('\n\n')
 
     def save(self, sess, log_dir, dataset_name, global_step=None):
         assert self.saver is not None
