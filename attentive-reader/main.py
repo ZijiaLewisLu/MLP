@@ -5,13 +5,13 @@ import json
 
 from model import DeepLSTM, DeepBiLSTM, AttentiveReader
 
-from utils import pp, GPU
+from utils import pp 
 
 flags = tf.app.flags
 flags.DEFINE_integer("epoch", 25, "Epoch to train [40]")
 flags.DEFINE_integer("vocab_size", 264588, "The size of vocabulary [10000]")
 flags.DEFINE_integer("batch_size", 32, "The size of batch images [32]")
-flags.DEFINE_integer("gpu", None, "the number of gpus to use")
+# flags.DEFINE_integer("gpu", None, "the number of gpus to use")
 flags.DEFINE_integer("data_size", 3000, "Number of files to train on")
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
@@ -43,14 +43,8 @@ def main(_):
     print 'log_dir exist %s' % log_dir
     exit(2)
 
-  if FLAGS.gpu is None:
-      device = ['/gpu']
-  else:
-      device = [ '/gpu:%d'%g for g in GPU()[:FLAGS.gpu] ]
-  device += ['/cpu']
-  print(" [*] Using device: ", device) 
 
-  with tf.device(device), tf.Session() as sess:
+  with tf.Session() as sess:
     model = model_dict[FLAGS.model](batch_size=FLAGS.batch_size)
 
     if not FLAGS.forward_only:
