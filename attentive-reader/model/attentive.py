@@ -165,17 +165,12 @@ class AttentiveReader(Model):
             
             # train
             for batch_idx, docs, d_end, queries, q_end, y in train_iter:
-                _, summary_str, cost, accuracy, vars = sess.run([self.train_op, merged, self.loss, self.accuracy, self.vars ],
+                _, summary_str, cost, accuracy = sess.run([self.train_op, merged, self.loss, self.accuracy ],
                                                       feed_dict={self.document: docs,
                                                                  self.query: queries,
                                                                  self.d_end: d_end,
                                                                  self.q_end: q_end,
                                                                  self.y: y}) 
-                # for i in range(len(self.vname)):
-                    # tmp = np.mean( vars[i] )
-                    # if tmp is not None:
-
-
 
                 writer.add_summary(summary_str, counter)
                 if counter % 10 == 0:
@@ -186,11 +181,16 @@ class AttentiveReader(Model):
             # validate
             running_acc = 0
             running_loss = 0 
-            for batch_idx, docs, queries, y in validate_iter:
-                cost, accuracy = sess.run([self.loss, self.accuracy],
+            for batch_idx, docs, d_end, queries, q_end, y in validate_iter:
+                cost, accuracy, vars = sess.run([self.loss, self.accuracy, self.vars],
                                           feed_dict={self.document: docs,
                                                      self.query: queries,
+                                                     self.d_end: d_end,
+                                                     self.q_end: q_end,
                                                      self.y: y})
+                for n,v in zip(self.vname, vars):
+                    print("%s mean: %.4f var: %.4f max: %.4f min: %.4f" % 
+                            (n, np.mean(v), np.var(v), np.max(v), np.min(v)) )
                 running_acc += accuracy
                 running_loss += np.mean(cost)
             ACC.append(running_acc/vsteps)

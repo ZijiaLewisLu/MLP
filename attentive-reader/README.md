@@ -1,3 +1,5 @@
+**Credit to Taehoon Kim! I am building on his work. Below is his doc.**
+
 Attentive Reader
 ================
 
