@@ -116,7 +116,7 @@ class AttentiveReader(Model):
 
     def train(self, sess, vocab_size, epoch=25, learning_rate=0.0002,
               momentum=0.9, decay=0.95, data_dir="data", dataset_name="cnn",
-              log_dir='log/tmp/', load_path=None):
+              log_dir='log/tmp/', load_path=None, data_size=3000):
 
         print(" [*] Building Network...")
         self.prepare_model()
@@ -164,7 +164,7 @@ class AttentiveReader(Model):
         # var_log = open( os.path.join(log_dir, 'vars.log'),'w')
         for epoch_idx in xrange(epoch):
             train_iter, tsteps, validate_iter, vsteps = load_dataset(data_dir, dataset_name, \
-                                        vocab_size, self.batch_size, self.max_nsteps, self.max_query_length, size=3000)
+                                        vocab_size, self.batch_size, self.max_nsteps, self.max_query_length, size=data_size)
             
             # train
             for batch_idx, docs, d_end, queries, q_end, y in train_iter:
