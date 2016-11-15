@@ -34,6 +34,7 @@ from gensim import corpora
 from nltk.corpus import stopwords
 from nltk.tokenize import RegexpTokenizer
 import numpy as np
+import random 
 
 tokenizer = RegexpTokenizer(r'\w+')
 
@@ -237,7 +238,7 @@ def load_vocab(data_dir, dataset_name, vocab_size):
   return initialize_vocabulary(vocab_fname)
 
 
-def data_iter(flist, max_nstep, max_query_step, batch_size=None, vocab_size=264588):
+def data_iter(flist, max_nstep, max_query_step, batch_size=None, vocab_size=264588, shuffle_data=True):
   if batch_size is None:
     batch_size = len(flist)
 
@@ -259,6 +260,9 @@ def data_iter(flist, max_nstep, max_query_step, batch_size=None, vocab_size=2645
       files = flist[head:end]
     else:
       files = flist[head:] + flist[:end-len(flist)]
+
+    if shuffle_data:
+        random.shuffle(files)
 
     y.fill(0)
     ds.fill(0)
@@ -290,7 +294,7 @@ def data_iter(flist, max_nstep, max_query_step, batch_size=None, vocab_size=2645
 
     yield s, ds, d_length, qs, q_length, y
 
-def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_query_step, split_rate=0.9, size=None):
+def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_query_step, split_rate=0.9, size=None, shuffle_data=True):
   files = glob(os.path.join(data_dir, dataset_name, "questions",
                                   "training", "*.question.ids%s_*" % (vocab_size)))
   max_idx = len(files)
@@ -302,8 +306,8 @@ def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_
   train = files[:part]
   validate = files[part:]
 
-  titer = data_iter(train, max_nstep, max_query_step, batch_size)
-  viter = data_iter(validate, max_nstep, max_query_step, batch_size)
+  titer = data_iter(train, max_nstep, max_query_step, batch_size, shuffle_data=shuffle_data)
+  viter = data_iter(validate, max_nstep, max_query_step, batch_size, shuffle_data=shuffle_data)
 
   tstep = titer.next()
   vstep = viter.next()
