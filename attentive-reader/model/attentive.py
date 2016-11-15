@@ -153,8 +153,9 @@ class AttentiveReader(Model):
             print(" [*] Loading %s"% fname)
             self.saver.restore(sess, fname)
             print(" [*] Checkpoint is loaded.")
-
-        sess.run(tf.initialize_all_variables())
+        else:
+            sess.run(tf.initialize_all_variables())
+            print(" [*] No checkpoint to load, all variable inited")
 
         counter = 0
         start_time = time.time()
