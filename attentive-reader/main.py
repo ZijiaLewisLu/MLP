@@ -5,7 +5,7 @@ import json
 
 from model import DeepLSTM, DeepBiLSTM, AttentiveReader
 
-from utils import pp, GPU
+from utils import pp, define_gpu
 
 flags = tf.app.flags
 flags.DEFINE_integer("epoch", 25, "Epoch to train [40]")
@@ -36,9 +36,7 @@ def main(_):
   pp.pprint(flags.FLAGS.__flags)
 
   if FLAGS.gpu is not None:
-    gpu_list = GPU()[:FLAGS.gpu]
-    gpu_str  = ','.join( map(str, gpu_list) )
-    os.environ['CUDA_VISIBLE_DEVICES']=gpu_str 
+    gpu_str  = define_gpu(FLAGS.gpu)
 
   log_dir = "%s/%s_%s"%(FLAGS.log_dir, time.strftime("%m_%d_%H_%M"), FLAGS.model)
   if not os.path.exists(log_dir):
