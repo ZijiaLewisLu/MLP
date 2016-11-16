@@ -195,7 +195,7 @@ class AttentiveReader(Model):
                                                                  self.query: queries,
                                                                  self.d_end: d_end,
                                                                  self.q_end: q_end,
-                                                                 self.y: y,                                                                
+                                                                 self.y: y, 
                                                                  }) 
 
                 writer.add_summary(summary_str, counter)
@@ -213,9 +213,9 @@ class AttentiveReader(Model):
                                                      self.query: queries,
                                                      self.d_end: d_end,
                                                      self.q_end: q_end,
-                                                     self.y: y,                                                     
+                                                     self.y: y, 
                                                      })
-                writer.add_summary(validate_sum_str, counter)
+                writer.add_summary(validate_sum_str, counter+batch_idx)
                 running_acc += accuracy
                 running_loss += np.mean(cost)
 
