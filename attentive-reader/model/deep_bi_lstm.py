@@ -3,7 +3,7 @@ import tensorflow as tf
 from tensorflow.python.ops import rnn, rnn_cell
 
 from base_model import Model
-from data_utils import load_vocab, load_dataset
+from utils import load_vocab, load_dataset
 
 class DeepBiLSTM(Model):
   """Deep Bidirectional LSTM model."""

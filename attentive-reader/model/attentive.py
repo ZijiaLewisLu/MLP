@@ -215,7 +215,7 @@ class AttentiveReader(Model):
                                                      self.q_end: q_end,
                                                      self.y: y, 
                                                      })
-                writer.add_summary(validate_sum_str, counter+batch_idx)
+                writer.add_summary(validate_sum_str, counter)
                 running_acc += accuracy
                 running_loss += np.mean(cost)
 

@@ -7,7 +7,7 @@ from tensorflow.python.ops import rnn, rnn_cell
 from utils import array_pad
 from base_model import Model
 from cells import LSTMCell, MultiRNNCellWithSkipConn
-from data_utils import load_vocab, load_dataset
+from utils import load_vocab, load_dataset
 
 class DeepLSTM(Model):
   """Deep LSTM model."""
