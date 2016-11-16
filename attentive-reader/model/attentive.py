@@ -17,6 +17,7 @@ class AttentiveReader(Model):
                  learning_rate=1e-4, batch_size=32,
                  max_nsteps=1000,
                  max_query_length=31,
+                 dropout_rate=0.9,
                  ):
         """Initialize the parameters for an  Attentive Reader model.
 
@@ -36,6 +37,7 @@ class AttentiveReader(Model):
         self.max_nsteps = max_nsteps
         self.max_query_length = max_query_length
         self.vocab_size = vocab_size
+        self.dropout = dropout_rate
 
         self.saver = None
 
@@ -48,7 +50,6 @@ class AttentiveReader(Model):
         self.d_end = tf.placeholder(tf.int32, self.batch_size)
         self.q_end = tf.placeholder(tf.int32, self.batch_size)
         self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size])
-        self.dropout = tf.placeholder(tf.float32)
 
         # Embeding
         self.emb = tf.get_variable("emb", [self.vocab_size, self.size])
@@ -109,8 +110,8 @@ class AttentiveReader(Model):
         W_ug = tf.get_variable("W_ug", [2 * self.size, self.vocab_size])
         mid = tf.matmul(r, W_rg) + tf.matmul(u, W_ug)
         # mid = tf.contrib.layers.batch_norm(mid)
-        # g = tf.tanh(mid)
-        g = tf.nn.relu(mid)
+        g = tf.tanh(mid)
+        # g = tf.nn.relu(mid)
         beact_sum = tf.scalar_summary('before activitation', tf.reduce_mean(mid))
 
         self.loss = tf.nn.softmax_cross_entropy_with_logits(g, self.y, name='loss')
@@ -129,7 +130,7 @@ class AttentiveReader(Model):
         print(" [*] Preparing model finished.")
 
     def train(self, sess, vocab_size, epoch=25, learning_rate=0.0002,
-              momentum=0.9, decay=0.95, dropout_rate=0.9, data_dir="data", dataset_name="cnn",
+              momentum=0.9, decay=0.95, data_dir="data", dataset_name="cnn",
               log_dir='log/tmp/', load_path=None, data_size=3000):
 
         print(" [*] Building Network...")
@@ -139,7 +140,7 @@ class AttentiveReader(Model):
         start = time.clock()
         print(" [*] Calculating gradient and loss...")
         # self.optim = tf.train.AdamOptimizer(learning_rate, 0.9, name='optimizer')
-        self.optim = tf.train.GradientDescentOptimizer( learning_rate, name='optimizer')
+        self.optim = tf.train.GradientDescentOptimizer( learning_rate, name='optimizer' )
         self.grad_and_var = self.optim.compute_gradients(self.loss)
         gv_sum = []
         for g, v in self.grad_and_var:
@@ -194,8 +195,7 @@ class AttentiveReader(Model):
                                                                  self.query: queries,
                                                                  self.d_end: d_end,
                                                                  self.q_end: q_end,
-                                                                 self.y: y,
-                                                                 self.dropout: dropout_rate,
+                                                                 self.y: y,                                                                
                                                                  }) 
 
                 writer.add_summary(summary_str, counter)
@@ -213,8 +213,7 @@ class AttentiveReader(Model):
                                                      self.query: queries,
                                                      self.d_end: d_end,
                                                      self.q_end: q_end,
-                                                     self.y: y,
-                                                     self.dropout: 1.0,
+                                                     self.y: y,                                                     
                                                      })
                 writer.add_summary(validate_sum_str, counter)
                 running_acc += accuracy

@@ -51,13 +51,12 @@ def main(_):
 
 
   with tf.Session() as sess:
-    model = model_dict[FLAGS.model](batch_size=FLAGS.batch_size)
+    model = model_dict[FLAGS.model](batch_size=FLAGS.batch_size, dropout_rate=FLAGS.dropout)
     print(" [*] Using GPU: %s" % gpu_str)
 
     if not FLAGS.forward_only:
       model.train(sess, FLAGS.vocab_size, FLAGS.epoch,
                   FLAGS.learning_rate, FLAGS.momentum, FLAGS.decay,
-                  FLAGS.dropout,
                   FLAGS.data_dir, FLAGS.dataset, log_dir, FLAGS.load_path,
                   FLAGS.data_size)
     else:
