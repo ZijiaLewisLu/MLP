@@ -5,17 +5,18 @@ import json
 
 from model import DeepLSTM, DeepBiLSTM, AttentiveReader
 
-from utils import pp 
+from utils import pp, GPU
 
 flags = tf.app.flags
 flags.DEFINE_integer("epoch", 25, "Epoch to train [40]")
 flags.DEFINE_integer("vocab_size", 264588, "The size of vocabulary [10000]")
 flags.DEFINE_integer("batch_size", 32, "The size of batch images [32]")
-# flags.DEFINE_integer("gpu", None, "the number of gpus to use")
+flags.DEFINE_integer("gpu", None, "the number of gpus to use")
 flags.DEFINE_integer("data_size", 3000, "Number of files to train on")
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
+flags.DEFINE_float("dropout", 0.9, "Dropout rate")
 flags.DEFINE_string("model", "Attentive", "The type of model to train and test [LSTM, BiLSTM, Attentive, Impatient]")
 flags.DEFINE_string("data_dir", "data", "The name of data directory [data]")
 flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
@@ -34,6 +35,11 @@ model_dict = {
 def main(_):
   pp.pprint(flags.FLAGS.__flags)
 
+  if FLAGS.gpu is not None:
+    gpu_list = GPU()[:FLAGS.gpu]
+    gpu_str  = ','.join( map(str, gpu_list) )
+    os.environ['CUDA_VISIBLE_DEVICES']=gpu_str 
+
   log_dir = "%s/%s_%s"%(FLAGS.log_dir, time.strftime("%m_%d_%H_%M"), FLAGS.model)
   if not os.path.exists(log_dir):
     os.makedirs(log_dir)
@@ -46,10 +52,12 @@ def main(_):
 
   with tf.Session() as sess:
     model = model_dict[FLAGS.model](batch_size=FLAGS.batch_size)
+    print(" [*] Using GPU: %s" % gpu_str)
 
     if not FLAGS.forward_only:
       model.train(sess, FLAGS.vocab_size, FLAGS.epoch,
                   FLAGS.learning_rate, FLAGS.momentum, FLAGS.decay,
+                  FLAGS.dropout,
                   FLAGS.data_dir, FLAGS.dataset, log_dir, FLAGS.load_path,
                   FLAGS.data_size)
     else:

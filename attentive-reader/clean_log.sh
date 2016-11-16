@@ -2,7 +2,6 @@
 
 root=${1%/}
 files=$(ls $root)
-echo $files
 for f in $files; do
     f="$root/$f"
     if [ -d $f ]; then
