@@ -11,7 +11,7 @@ flags = tf.app.flags
 flags.DEFINE_integer("epoch", 25, "Epoch to train [40]")
 flags.DEFINE_integer("vocab_size", 264588, "The size of vocabulary [10000]")
 flags.DEFINE_integer("batch_size", 32, "The size of batch images [32]")
-flags.DEFINE_integer("gpu", None, "the number of gpus to use")
+flags.DEFINE_integer("gpu", 1, "the number of gpus to use")
 flags.DEFINE_integer("data_size", 3000, "Number of files to train on")
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
@@ -36,7 +36,7 @@ def main(_):
   pp.pprint(flags.FLAGS.__flags)
 
   if FLAGS.gpu is not None:
-    gpu_str  = define_gpu(FLAGS.gpu)
+    gpu_list  = define_gpu(FLAGS.gpu)
 
   log_dir = "%s/%s_%s"%(FLAGS.log_dir, time.strftime("%m_%d_%H_%M"), FLAGS.model)
   if not os.path.exists(log_dir):
@@ -44,13 +44,13 @@ def main(_):
     with open(log_dir+'/Flags.js','w') as f:
       json.dump(FLAGS.__flags, f, indent=4)
   else:
-    print 'log_dir exist %s' % log_dir
+    print('log_dir exist %s' % log_dir)
     exit(2)
 
 
   with tf.Session() as sess:
     model = model_dict[FLAGS.model](batch_size=FLAGS.batch_size, dropout_rate=FLAGS.dropout)
-    print(" [*] Using GPU: %s" % gpu_str)
+    print(" [*] Using GPU: ", gpu_list)
 
     if not FLAGS.forward_only:
       model.train(sess, FLAGS.vocab_size, FLAGS.epoch,

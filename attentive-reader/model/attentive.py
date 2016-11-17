@@ -41,15 +41,14 @@ class AttentiveReader(Model):
 
         self.saver = None
 
-    def prepare_model(self):
+    def prepare_model(self, parrallel=False):
 
-        self.document = tf.placeholder(
-            tf.int32, [self.batch_size, self.max_nsteps])
-        self.query = tf.placeholder(
-            tf.int32, [self.batch_size, self.max_query_length])
-        self.d_end = tf.placeholder(tf.int32, self.batch_size)
-        self.q_end = tf.placeholder(tf.int32, self.batch_size)
-        self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size])
+        if not parrallel:
+            self.document = tf.placeholder(tf.int32, [self.batch_size, self.max_nsteps])
+            self.query = tf.placeholder(tf.int32, [self.batch_size, self.max_query_length])
+            self.d_end = tf.placeholder(tf.int32, self.batch_size)
+            self.q_end = tf.placeholder(tf.int32, self.batch_size)
+            self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size])
 
         # Embeding
         self.emb = tf.get_variable("emb", [self.vocab_size, self.size])
@@ -120,46 +119,48 @@ class AttentiveReader(Model):
         correct_prediction = tf.equal(tf.argmax(self.y, 1), tf.argmax(g, 1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
         acc_sum   = tf.scalar_summary("accuracy", self.accuracy)
-        self.train_sum = tf.merge_summary([embed_sum, beact_sum, loss_sum, acc_sum ])
+        self.train_sum = tf.merge_summary([ beact_sum, loss_sum, acc_sum ])
+
+        # optimize
+        self.optim = tf.train.GradientDescentOptimizer(self.learning_rate, name='optimizer')
+        self.grad_and_var = self.optim.compute_gradients(self.loss)
+
+        # gv summary
+        gv_sum = []
+        for g, v in self.grad_and_var:
+            v_sum = tf.scalar_summary( "I_{}-var/mean".format(v.name), tf.reduce_mean(v) )
+            gv_sum.append(v_sum)
+            # need control dependency to run it, unneccssary now
+            # tf.check_numerics(v, v.name) 
+            if g is not None:
+                g_sum = tf.scalar_summary( "I_{}-grad/mean".format(v.name), tf.reduce_mean(g) )
+                gv_sum.append(g_sum)
+        self.vname = [ v.name for g,v in self.grad_and_var ]
+        self.vars  = [ v for g,v in self.grad_and_var ]
+        self.gras  = [ g for g,v in self.grad_and_var ]
+        self.train_sum = tf.merge_summary([self.train_sum]+gv_sum)
+
+        if not parrallel:
+            self.train_op = self.optim.apply_gradients(self.grad_and_var, name='train_op')
+        else:
+            self.train_op = None
 
         # validation sum
         v_loss_sum  = tf.scalar_summary("V_loss", tf.reduce_mean(self.loss))
         v_acc_sum   = tf.scalar_summary("V_accuracy", self.accuracy)
-        self.validate_sum = tf.merge_summary([v_loss_sum, v_acc_sum])
+        self.validate_sum = tf.merge_summary([embed_sum, v_loss_sum, v_acc_sum])
 
-        print(" [*] Preparing model finished.")
 
     def train(self, sess, vocab_size, epoch=25, learning_rate=0.0002,
               momentum=0.9, decay=0.95, data_dir="data", dataset_name="cnn",
               log_dir='log/tmp/', load_path=None, data_size=3000):
 
         print(" [*] Building Network...")
+        start = time.time()
         self.prepare_model()
-
-        # Creat Loss Function
-        start = time.clock()
-        print(" [*] Calculating gradient and loss...")
-        # self.optim = tf.train.AdamOptimizer(learning_rate, 0.9, name='optimizer')
-        self.optim = tf.train.GradientDescentOptimizer( learning_rate, name='optimizer' )
-        self.grad_and_var = self.optim.compute_gradients(self.loss)
-        gv_sum = []
-        for g, v in self.grad_and_var:
-            v_sum = tf.scalar_summary( "I_{}-var/mean".format(v.name), tf.reduce_mean(v) )
-            gv_sum.append(v_sum)
-            tf.check_numerics(v, v.name)
-            if g is not None:
-                g_sum = tf.scalar_summary( "I_{}-grad/mean".format(v.name), tf.reduce_mean(g) )
-                gv_sum.append(g_sum)
-        self.train_op = self.optim.apply_gradients(self.grad_and_var, name='train_op')
-
-        self.vname = [ v.name for g,v in self.grad_and_var ]
-        self.vars  = [ v for g,v in self.grad_and_var ]
-        self.gras  = [ g for g,v in self.grad_and_var ]
-
-        print(" [*] Calculating gradient and loss finished. Take %.2fs" % (time.clock() - start))
+        print(" [*] Preparing model finished. Use %4.4f"% (time.time()-start))
 
         # Summary
-        merged = tf.merge_summary([self.train_sum]+gv_sum)
         writer = tf.train.SummaryWriter(log_dir, sess.graph)
         print(" [*] Writing log to %s" % log_dir )
 
@@ -190,7 +191,7 @@ class AttentiveReader(Model):
             
             # train
             for batch_idx, docs, d_end, queries, q_end, y in train_iter:
-                _, summary_str, cost, accuracy = sess.run([self.train_op, merged, self.loss, self.accuracy ],
+                _, summary_str, cost, accuracy = sess.run([self.train_op, self.train_sum, self.loss, self.accuracy ],
                                                       feed_dict={self.document: docs,
                                                                  self.query: queries,
                                                                  self.d_end: d_end,
@@ -228,7 +229,7 @@ class AttentiveReader(Model):
             # for n,v in zip(self.vname, vars):
             #     print("%s mean: %.4f var: %.4f max: %.4f min: %.4f" % 
             #             (n, np.mean(v), np.var(v), np.max(v), np.min(v)) )
-            if epoch_idx % 3 == 0:
+            if (epoch_idx+1) % 3 == 0:
                 self.save(sess, log_dir, dataset_name, global_step=counter)
             print('\n\n')
 
