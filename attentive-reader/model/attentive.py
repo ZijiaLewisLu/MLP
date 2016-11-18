@@ -19,16 +19,6 @@ class AttentiveReader(Model):
                  max_query_length=31,
                  dropout_rate=0.9,
                  ):
-        """Initialize the parameters for an  Attentive Reader model.
-
-        Args:
-          vocab_size: int, The dimensionality of the input vocab
-          size: int, The dimensionality of the inputs into the Deep LSTM cell [32, 64, 256]
-          learning_rate: float, [1e-3, 5e-4, 1e-4, 5e-5]
-          batch_size: int, The size of a batch [16, 32]
-          dropout: unit Tensor or float between 0 and 1 [0.0, 0.1, 0.2]
-          max_time_unit: int, The max time unit [100]
-        """
         super(AttentiveReader, self).__init__()
 
         self.size = size
@@ -101,15 +91,14 @@ class AttentiveReader(Model):
         s = tf.expand_dims(tf.nn.softmax(m), -1)  # N,T,1
         d = tf.pack(d_t, axis=1)  # N,T,2E
         r = tf.reduce_sum(s * d, 1)  # N,2E
-        # if self.dropout is not None:
-            # r = tf.nn.dropout(r, keep_prob=self.dropout)
 
         # predict
         W_rg = tf.get_variable("W_rg", [2 * self.size, self.vocab_size])
         W_ug = tf.get_variable("W_ug", [2 * self.size, self.vocab_size])
         mid = tf.matmul(r, W_rg) + tf.matmul(u, W_ug)
         # mid = tf.contrib.layers.batch_norm(mid)
-        g = tf.tanh(mid)
+        # g = tf.tanh(mid)
+        g = mid
         # g = tf.nn.relu(mid)
         beact_sum = tf.scalar_summary('before activitation', tf.reduce_mean(mid))
 
@@ -186,6 +175,7 @@ class AttentiveReader(Model):
         LOSS = []
 
         for epoch_idx in xrange(epoch):
+            # load data
             train_iter, tsteps, validate_iter, vsteps = load_dataset(data_dir, dataset_name, \
                                         vocab_size, self.batch_size, self.max_nsteps, self.max_query_length, size=data_size)
             
@@ -229,6 +219,8 @@ class AttentiveReader(Model):
             # for n,v in zip(self.vname, vars):
             #     print("%s mean: %.4f var: %.4f max: %.4f min: %.4f" % 
             #             (n, np.mean(v), np.var(v), np.max(v), np.min(v)) )
+
+            # save
             if (epoch_idx+1) % 3 == 0:
                 self.save(sess, log_dir, dataset_name, global_step=counter)
             print('\n\n')

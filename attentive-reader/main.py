@@ -16,7 +16,7 @@ flags.DEFINE_integer("data_size", 3000, "Number of files to train on")
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
-flags.DEFINE_float("dropout", 0.9, "Dropout rate")
+flags.DEFINE_float("dropout", 1.0 , "Dropout rate")
 flags.DEFINE_string("model", "Attentive", "The type of model to train and test [LSTM, BiLSTM, Attentive, Impatient]")
 flags.DEFINE_string("data_dir", "data", "The name of data directory [data]")
 flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
@@ -50,7 +50,7 @@ def main(_):
 
   with tf.Session() as sess:
     model = model_dict[FLAGS.model](batch_size=FLAGS.batch_size, dropout_rate=FLAGS.dropout)
-    print(" [*] Using GPU: ", gpu_list)
+    print " [*] Using GPU: ", gpu_list
 
     if not FLAGS.forward_only:
       model.train(sess, FLAGS.vocab_size, FLAGS.epoch,

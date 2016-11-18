@@ -2,6 +2,7 @@ data
 checkpoint
 run
 log
+tmp
 cache
 squad
 contrib
