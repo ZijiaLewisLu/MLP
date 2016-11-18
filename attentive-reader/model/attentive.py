@@ -31,14 +31,13 @@ class AttentiveReader(Model):
 
         self.saver = None
 
-    def prepare_model(self, parrallel=False):
+    def prepare_model(self, parallel=False):
 
-        if not parrallel:
-            self.document = tf.placeholder(tf.int32, [self.batch_size, self.max_nsteps])
-            self.query = tf.placeholder(tf.int32, [self.batch_size, self.max_query_length])
-            self.d_end = tf.placeholder(tf.int32, self.batch_size)
-            self.q_end = tf.placeholder(tf.int32, self.batch_size)
-            self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size])
+        self.document = tf.placeholder(tf.int32, [self.batch_size, self.max_nsteps])
+        self.query = tf.placeholder(tf.int32, [self.batch_size, self.max_query_length])
+        self.d_end = tf.placeholder(tf.int32, self.batch_size)
+        self.q_end = tf.placeholder(tf.int32, self.batch_size)
+        self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size])
 
         # Embeding
         self.emb = tf.get_variable("emb", [self.vocab_size, self.size])
@@ -129,7 +128,7 @@ class AttentiveReader(Model):
         self.gras  = [ g for g,v in self.grad_and_var ]
         self.train_sum = tf.merge_summary([self.train_sum]+gv_sum)
 
-        if not parrallel:
+        if not parallel:
             self.train_op = self.optim.apply_gradients(self.grad_and_var, name='train_op')
         else:
             self.train_op = None
@@ -222,10 +221,10 @@ class AttentiveReader(Model):
 
             # save
             if (epoch_idx+1) % 3 == 0:
-                self.save(sess, log_dir, dataset_name, global_step=counter)
+                self.save(sess, log_dir, global_step=counter)
             print('\n\n')
 
-    def save(self, sess, log_dir, dataset_name, global_step=None):
+    def save(self, sess, log_dir, global_step=None):
         assert self.saver is not None
         print(" [*] Saving checkpoints...")
         checkpoint_dir = os.path.join(log_dir, "ckpts")

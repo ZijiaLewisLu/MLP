@@ -32,10 +32,11 @@ class MultiGPU_Manager(object):
 
         self.saver = None
         if session is None:
-            self.sess = tf.Session(config=tf.ConfigProto(
-                allow_soft_placement=True, log_device_placement=True))
+            self.sess = tf.Session(
+                config=tf.ConfigProto(allow_soft_placement=True))
         else:
             self.sess = session
+        self.load_path = None
 
         self.main_gpu = None
         self.main_model = None
@@ -45,6 +46,7 @@ class MultiGPU_Manager(object):
         self.loss = None
         self.accuracy = None
         self.train_op = None
+        self.sync_op = None
 
         self._build()
 
@@ -53,8 +55,7 @@ class MultiGPU_Manager(object):
         self.main_gpu = self.gpu_list[0]
         with tf.device('/gpu:%d' % self.main_gpu):
             self.main_model = self.model_builder()
-        self.variables = tf.all_variables()
-        self.variable_dict = {v.name: v for v in self.variables}
+        self.variable_dict = {v.name: v for v in tf.all_variables()}
 
         # create other models
         models = [self.main_model]
@@ -68,45 +69,47 @@ class MultiGPU_Manager(object):
         self.loss = self._mean([m.loss for m in models])
         self.accuracy = self._mean([m.accuracy for m in models])
 
-        # create update_op
-        gvs = []
-        for m in models:
-            gvs += m.optim.compute_gradients(m.loss)
-        gv_dict = {_.name: [] for _ in self.variables}
+        # create train_op
+        gvs = self.main_model.optim.compute_gradients(self.loss)
+        gv_dict = {_: [] for _ in self.variable_dict.keys()}
         for g, v in gvs:
-            if g is not None:
-                if v.name.startswith('GPU'):
-                    k = '/'.join(v.name.split('/')[1:])
-                else:
-                    k = v.name
-                gv_dict[k].append(g)
-        the_gv = [(self._mean(gv_dict[v.name]), v) for v in self.variables]
-        self.gv_dict = gv_dict
-        self.update_op = self.main_model.optim.apply_gradients(the_gv)
+            gv_dict[self._parse(v.name)].append(g)
 
-        # create assign_op to sync values
-        assign_op_dict = {_.name: [_] for _ in self.variables}
+        for k, gs in gv_dict.items():
+            gv_dict[k] = self._mean(gs)
+
+        the_gv = []
+        for g, v in gvs:
+            the_gv.append((gv_dict[self._parse(v.name)], v))
+        self.gv_dict = gv_dict
+        self.train_op = self.main_model.optim.apply_gradients(the_gv)
+
+        # create sync_op
+        assign_op_dict = {k: [] for k in self.variable_dict.keys()}
         for v in tf.all_variables():
             if v.name.startswith('GPU'):
                 k = '/'.join(v.name.split('/')[1:])
-                main_v = assign_op_dict[k][0]
+                main_v = self.variable_dict[k]
                 assign_op_dict[k].append(v.assign(main_v.value()))
-        assign_op_dict = {k: tf.group(*v[1:])
+        assign_op_dict = {k: tf.group(*v)
                           for k, v in assign_op_dict.items()}
         self.assign_op_dict = assign_op_dict
-        self.assign_op = tf.group(*assign_op_dict.values())
-
-        # create train_op
-        # apply gradient to main model and sync across gpus
-        with tf.control_dependencies([self.update_op]):
-            self.train_op = tf.group(*assign_op_dict.values())
-        self.t_op = tf.group(self.assign_op, self.update_op)
+        self.sync_op = tf.group(*assign_op_dict.values())
 
         # build saver
-        self.saver = tf.train.Saver(self.variables)
+        self.saver = tf.train.Saver(self.variable_dict.values())
+
+    def _parse(self, name):
+        if name.startswith('GPU'):
+            return '/'.join(name.split('/')[1:])
+        else:
+            return name
 
     def _mean(self, L):
         n = float(len(L))
+        for i in range(int(n)):
+            if isinstance(L[i], tf.IndexedSlices):
+                L[i] = tf.convert_to_tensor(L[i])
         m = reduce(lambda x, y: x + y, L) / n
         return m
 
@@ -118,7 +121,8 @@ class MultiGPU_Manager(object):
         else:
             ckpt_name = self.load_path
         self.saver.restore(self.sess, ckpt_name)
-        self.sess.run(self.assign_op)
+        self.load_path = ckpt_name
+        self.sess.run(self.sync_op)
 
     def init_variable(self, load_path=None):
         """
@@ -131,10 +135,10 @@ class MultiGPU_Manager(object):
         if load_path is None:
             init = tf.initialize_all_variables()
             self.sess.run(init)
-            self.sess.run(self.assign_op)
+            self.sess.run(self.sync_op)
         else:
             self.load_path = load_path
-            self._load(load_path)
+            self._load()
 
     def feed_dict(self, feed_dict, batch_dim=0):
         """
