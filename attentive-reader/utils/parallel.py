@@ -13,7 +13,7 @@ def define_gpu(num):
 
 class MultiGPU_Manager(object):
 
-    def __init__(self, gpu_list, model_builder, session=None):
+    def __init__(self, gpu_list, model_builder, session=None, grad_merge='mean' ):
         """ 
         Inputs:
             gpu_list: the id of gpus to use
@@ -24,11 +24,15 @@ class MultiGPU_Manager(object):
             session: default session. If None, new one is created.
                      If session is created externally, make sure to set allow_soft_placement=True.
                      Otherwise error may be encountered when loading checkpoints.
+            grad_merge: method to sync gradient across gpu, 'mean' or 'sum'
+                        default is 'mean'
+                       
         """
         self.N = len(gpu_list)
         self.gpu_list = gpu_list
         self.model_builder = model_builder
         assert callable(model_builder), 'Model_builder is not callable'
+        self._grad_merge = grad_merge
 
         self.saver = None
         if session is None:
@@ -66,8 +70,8 @@ class MultiGPU_Manager(object):
         self.models = models
 
         # create total loss and accuracy
-        self.loss = self._mean([m.loss for m in models])
-        self.accuracy = self._mean([m.accuracy for m in models])
+        self.loss = self._merge([m.loss for m in models])
+        self.accuracy = self._merge([m.accuracy for m in models])
 
         # create train_op
         gvs = self.main_model.optim.compute_gradients(self.loss)
@@ -76,7 +80,7 @@ class MultiGPU_Manager(object):
             gv_dict[self._parse(v.name)].append(g)
 
         for k, gs in gv_dict.items():
-            gv_dict[k] = self._mean(gs)
+            gv_dict[k] = self._merge(gs)
 
         the_gv = []
         for g, v in gvs:
@@ -105,21 +109,27 @@ class MultiGPU_Manager(object):
         else:
             return name
 
-    def _mean(self, L):
-        n = float(len(L))
-        for i in range(int(n)):
+    def _merge(self, L):
+        n = len(L)
+        for i in range(n):
             if isinstance(L[i], tf.IndexedSlices):
                 L[i] = tf.convert_to_tensor(L[i])
-        m = reduce(lambda x, y: x + y, L) / n
-        return m
+        m = reduce(lambda x, y: x + y, L) 
+        if self._grad_merge == 'mean':
+            m /= float(n)
+            return m
+        if self._grad_merge == 'sum':
+            return m
 
     def _load(self, load_path):
         assert load_path is not None, 'No Checkpoint specified.'
         assert self.saver is not None, 'No Saver'
-        if os.path.isdir(self.load_path):
-            ckpt_name = tf.train.latest_checkpoint(self.load_path)
+        if os.path.isdir(load_path):
+            ckpt_name = tf.train.latest_checkpoint(load_path)
+            assert ckpt_name is not None
+            print ckpt_name
         else:
-            ckpt_name = self.load_path
+            ckpt_name = load_path
         self.saver.restore(self.sess, ckpt_name)
         self.load_path = ckpt_name
         self.sess.run(self.sync_op)
@@ -137,8 +147,7 @@ class MultiGPU_Manager(object):
             self.sess.run(init)
             self.sess.run(self.sync_op)
         else:
-            self.load_path = load_path
-            self._load()
+            self._load(load_path)
 
     def feed_dict(self, feed_dict, batch_dim=0):
         """

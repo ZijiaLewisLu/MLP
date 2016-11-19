@@ -9,10 +9,10 @@ from model import DeepLSTM, DeepBiLSTM, AttentiveReader
 from utils import pp, define_gpu, MultiGPU_Manager, load_dataset
 
 flags = tf.app.flags
-flags.DEFINE_integer("epoch", 25, "Epoch to train [40]")
-flags.DEFINE_integer("vocab_size", 264588, "The size of vocabulary [10000]")
+flags.DEFINE_integer("epoch", 16, "Epoch to train [40]")
+flags.DEFINE_integer("vocab_size", 50003, "The size of vocabulary [100003]")
 flags.DEFINE_integer("batch_size", 32, "The size of batch images [32]")
-flags.DEFINE_integer("gpu", 1, "the number of gpus to use")
+flags.DEFINE_integer("gpu", 2, "the number of gpus to use")
 flags.DEFINE_integer("data_size", 3000, "Number of files to train on")
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
@@ -67,7 +67,7 @@ def main(_):
 
     print " [*] Initialize Variables..."
     start = time.time()
-    mgr.init_variable(load_path=FLAGS.load_path)
+    mgr.init_variable(load_path=os.path.join(FLAGS.load_path,'ckpts'))
     if mgr.load_path is not None:
         print " [*] Load from %s" % mgr.load_path
     print " [*] Variables inited. Use %4.4f" % (time.time() - start)
@@ -128,7 +128,7 @@ def main(_):
         # save
         if (epoch_idx + 1) % 3 == 0:
             print " [*] Saving checkpoints..."
-            checkpoint_dir = os.path.join(FLAGS.log_dir, "ckpts")
+            checkpoint_dir = os.path.join(log_dir, "ckpts")
             if not os.path.exists(checkpoint_dir):
                 os.makedirs(checkpoint_dir)
             fname = os.path.join(checkpoint_dir, 'model')

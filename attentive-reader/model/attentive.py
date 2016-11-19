@@ -13,10 +13,10 @@ from utils import load_dataset
 class AttentiveReader(Model):
     """Attentive Reader."""
 
-    def __init__(self, size=256, vocab_size=264588,
+    def __init__(self, size=256, vocab_size=50003,
                  learning_rate=1e-4, batch_size=32,
                  max_nsteps=1000,
-                 max_query_length=31,
+                 max_query_length=20,
                  dropout_rate=0.9,
                  ):
         super(AttentiveReader, self).__init__()
