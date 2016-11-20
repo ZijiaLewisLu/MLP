@@ -274,11 +274,14 @@ def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_
     part = int(math.floor(max_idx * split_rate))
     train = files[:part]
     validate = files[part:]
+    if shuffle_data:
+        random.shuffle(train)
+        random.shuffle(validate)
 
     titer = data_iter(train, max_nstep, max_query_step,
-                      batch_size, vocab_size=vocab_size, shuffle_data=shuffle_data)
+                      batch_size, vocab_size=vocab_size, shuffle_data=False)
     viter = data_iter(validate, max_nstep, max_query_step,
-                      batch_size, vocab_size=vocab_size, shuffle_data=shuffle_data)
+                      batch_size, vocab_size=vocab_size, shuffle_data=False)
 
     tstep = titer.next()
     vstep = viter.next()

@@ -23,8 +23,8 @@ flags.DEFINE_string("data_dir", "data", "The name of data directory [data]")
 flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
 flags.DEFINE_string("load_path", None, "The path to old model. [None]")
-flags.DEFINE_string("optim", 'SGD', "The path to old model. [None]")
-flags.DEFINE_string("active", 'relu', "The path to old model. [None]")
+flags.DEFINE_string("optim", 'RMS', "The path to old model. [None]")
+flags.DEFINE_string("active", 'none', "The path to old model. [None]")
 
 flags.DEFINE_boolean("forward_only", False, "True for forward only, False for training [False]")
 FLAGS = flags.FLAGS
