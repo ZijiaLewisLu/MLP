@@ -3,14 +3,10 @@ import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
-
-# from utils import array_pad
-from base_model import Model
-# from cells import LSTMCell, MultiRNNCellWithSkipConn
 from utils import load_dataset
 
 
-class AttentiveReader(Model):
+class AttentiveReader():
     """Attentive Reader."""
 
     def __init__(self, vocab_size=50003, batch_size=32,
@@ -19,8 +15,8 @@ class AttentiveReader(Model):
                  max_nsteps=1000,
                  max_query_length=20,
                  dropout_rate=0.9,
-                 use_optimizer = 'SGD',
-                 activitation='tanh'
+                 use_optimizer = 'RMS',
+                 activation='none'
                  ):
         super(AttentiveReader, self).__init__()
 
@@ -34,7 +30,7 @@ class AttentiveReader(Model):
         self.momentum = momentum
         self.decay = decay
         self.use_optimizer = use_optimizer
-        self.activitation = activitation
+        self.activation = activation
 
         self.saver = None
 
@@ -102,14 +98,15 @@ class AttentiveReader(Model):
         W_rg = tf.get_variable("W_rg", [2 * self.size, self.vocab_size])
         W_ug = tf.get_variable("W_ug", [2 * self.size, self.vocab_size])
         mid = tf.matmul(r, W_rg, name='r_x_W') + tf.matmul(u, W_ug, name='u_x_W')
-        if self.activitation == 'relu':
-            g = tf.nn.relu(mid)
-        elif self.activitation == 'tanh':          
+        if self.activation == 'relu':
+            g = tf.nn.relu(mid, name='relu_g')
+        elif self.activation == 'tanh':
             g = tf.tanh(mid, name='g')
-        elif self.activitation == 'none':
+        elif self.activation == 'none':
             g = mid
         else:
-            raise ValueError(self.activitation)
+            raise ValueError(self.activation)
+
         beact_sum = tf.scalar_summary('before activitation', tf.reduce_mean(mid))
         afact_sum = tf.scalar_summary('before activitation_after', tf.reduce_mean(g))
 
@@ -233,11 +230,6 @@ class AttentiveReader(Model):
             print("Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f"
                       %(epoch_idx, time.time()-start_time, running_loss/vsteps, running_acc/vsteps))
 
-            # vars = sess.run(self.vars)
-            # for n,v in zip(self.vname, vars):
-            #     print("%s mean: %.4f var: %.4f max: %.4f min: %.4f" % 
-            #             (n, np.mean(v), np.var(v), np.max(v), np.min(v)) )
-
             # save
             if (epoch_idx+1) % 3 == 0:
                 self.save(sess, log_dir, global_step=counter)
@@ -252,6 +244,3 @@ class AttentiveReader(Model):
         fname = os.path.join(checkpoint_dir, 'model')
         self.saver.save(sess, fname, global_step=global_step)
 
-    def test(self, voab_size):
-        pass
-        # self.prepare_model(data_dir, dataset_name, vocab_size)
