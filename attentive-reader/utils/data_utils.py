@@ -21,8 +21,9 @@ from __future__ import division
 from __future__ import print_function
 
 import os
+import six
 import re
-# import sys
+import codecs
 import json
 import time
 import math
@@ -271,14 +272,13 @@ def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_
         files = files[:max_idx]
 
     part = int(math.floor(max_idx * split_rate))
-    # print(part)
     train = files[:part]
     validate = files[part:]
 
     titer = data_iter(train, max_nstep, max_query_step,
-                      batch_size, shuffle_data=shuffle_data)
+                      batch_size, vocab_size=vocab_size, shuffle_data=shuffle_data)
     viter = data_iter(validate, max_nstep, max_query_step,
-                      batch_size, shuffle_data=shuffle_data)
+                      batch_size, vocab_size=vocab_size, shuffle_data=shuffle_data)
 
     tstep = titer.next()
     vstep = viter.next()

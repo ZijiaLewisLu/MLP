@@ -13,11 +13,14 @@ from utils import load_dataset
 class AttentiveReader(Model):
     """Attentive Reader."""
 
-    def __init__(self, size=256, vocab_size=50003,
-                 learning_rate=1e-4, batch_size=32,
+    def __init__(self, vocab_size=50003, batch_size=32,
+                 learning_rate=1e-4, momentum=0.9, decay=0.95, 
+                 size=256,
                  max_nsteps=1000,
                  max_query_length=20,
                  dropout_rate=0.9,
+                 use_optimizer = 'SGD',
+                 activitation='tanh'
                  ):
         super(AttentiveReader, self).__init__()
 
@@ -28,23 +31,27 @@ class AttentiveReader(Model):
         self.max_query_length = max_query_length
         self.vocab_size = vocab_size
         self.dropout = dropout_rate
+        self.momentum = momentum
+        self.decay = decay
+        self.use_optimizer = use_optimizer
+        self.activitation = activitation
 
         self.saver = None
 
     def prepare_model(self, parallel=False):
 
-        self.document = tf.placeholder(tf.int32, [self.batch_size, self.max_nsteps])
-        self.query = tf.placeholder(tf.int32, [self.batch_size, self.max_query_length])
-        self.d_end = tf.placeholder(tf.int32, self.batch_size)
-        self.q_end = tf.placeholder(tf.int32, self.batch_size)
-        self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size])
+        self.document = tf.placeholder(tf.int32, [self.batch_size, self.max_nsteps], name='document')
+        self.query = tf.placeholder(tf.int32, [self.batch_size, self.max_query_length], name='query')
+        self.d_end = tf.placeholder(tf.int32, self.batch_size, name='docu-end')
+        self.q_end = tf.placeholder(tf.int32, self.batch_size, name='quer-end')
+        self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size], name='Y')
 
         # Embeding
         self.emb = tf.get_variable("emb", [self.vocab_size, self.size])
         # shape: batch_size, sentence_length, embedding_size
-        embed_d = tf.nn.embedding_lookup(self.emb, self.document)
+        embed_d = tf.nn.embedding_lookup(self.emb, self.document, name='embed_d')
         # shape: batch_size, sentence_length, embedding_size
-        embed_q = tf.nn.embedding_lookup(self.emb, self.query)
+        embed_q = tf.nn.embedding_lookup(self.emb, self.query, name='embed_q')
         embed_sum = tf.histogram_summary("embed", self.emb)
         if self.dropout < 1:
             embed_d = tf.nn.dropout(embed_d, keep_prob=self.dropout)
@@ -75,7 +82,7 @@ class AttentiveReader(Model):
                 sequence_length=self.q_end, dtype=tf.float32)
             q_f = tf.unpack(q_t[0], axis=1)
             q_b = tf.unpack(q_t[-1], axis=1)
-            u = tf.concat(1, [q_f[-1], q_b[0]])
+            u = tf.concat(1, [q_f[-1], q_b[0]], name='u')
             if self.dropout < 1:
                 u = tf.nn.dropout(u, keep_prob=self.dropout)
        
@@ -89,17 +96,22 @@ class AttentiveReader(Model):
         m = tf.concat(1, m_t)  # N,T
         s = tf.expand_dims(tf.nn.softmax(m), -1)  # N,T,1
         d = tf.pack(d_t, axis=1)  # N,T,2E
-        r = tf.reduce_sum(s * d, 1)  # N,2E
+        r = tf.reduce_sum(s * d, 1, name='r')  # N,2E
 
         # predict
         W_rg = tf.get_variable("W_rg", [2 * self.size, self.vocab_size])
         W_ug = tf.get_variable("W_ug", [2 * self.size, self.vocab_size])
-        mid = tf.matmul(r, W_rg) + tf.matmul(u, W_ug)
-        # mid = tf.contrib.layers.batch_norm(mid)
-        # g = tf.tanh(mid)
-        g = mid
-        # g = tf.nn.relu(mid)
+        mid = tf.matmul(r, W_rg, name='r_x_W') + tf.matmul(u, W_ug, name='u_x_W')
+        if self.activitation == 'relu':
+            g = tf.nn.relu(mid)
+        elif self.activitation == 'tanh':          
+            g = tf.tanh(mid, name='g')
+        elif self.activitation == 'none':
+            g = mid
+        else:
+            raise ValueError(self.activitation)
         beact_sum = tf.scalar_summary('before activitation', tf.reduce_mean(mid))
+        afact_sum = tf.scalar_summary('before activitation_after', tf.reduce_mean(g))
 
         self.loss = tf.nn.softmax_cross_entropy_with_logits(g, self.y, name='loss')
         loss_sum  = tf.scalar_summary("loss", tf.reduce_mean(self.loss))
@@ -107,40 +119,41 @@ class AttentiveReader(Model):
         correct_prediction = tf.equal(tf.argmax(self.y, 1), tf.argmax(g, 1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
         acc_sum   = tf.scalar_summary("accuracy", self.accuracy)
-        self.train_sum = tf.merge_summary([ beact_sum, loss_sum, acc_sum ])
 
         # optimize
-        self.optim = tf.train.GradientDescentOptimizer(self.learning_rate, name='optimizer')
-        self.grad_and_var = self.optim.compute_gradients(self.loss)
+        if self.use_optimizer == 'SGD':
+            self.optim = tf.train.GradientDescentOptimizer(self.learning_rate, name='optimizer')
+        elif self.use_optimizer == 'Adam':
+            self.optim = tf.train.AdamOptimizer(self.learning_rate, name='optimizer')
+        elif self.use_optimizer == 'RMS':
+            self.optim = tf.train.RMSPropOptimizer(self.learning_rate, momentum=self.momentum, decay=self.decay)
 
-        # gv summary
+        self.grad_and_var = self.optim.compute_gradients(self.loss)
+        if not parallel:
+            self.train_op = self.optim.apply_gradients(self.grad_and_var, name='train_op')
+        else:
+            self.train_op = None
+
+        # train_sum
         gv_sum = []
         for g, v in self.grad_and_var:
             v_sum = tf.scalar_summary( "I_{}-var/mean".format(v.name), tf.reduce_mean(v) )
             gv_sum.append(v_sum)
-            # need control dependency to run it, unneccssary now
-            # tf.check_numerics(v, v.name) 
             if g is not None:
                 g_sum = tf.scalar_summary( "I_{}-grad/mean".format(v.name), tf.reduce_mean(g) )
                 gv_sum.append(g_sum)
         self.vname = [ v.name for g,v in self.grad_and_var ]
         self.vars  = [ v for g,v in self.grad_and_var ]
         self.gras  = [ g for g,v in self.grad_and_var ]
-        self.train_sum = tf.merge_summary([self.train_sum]+gv_sum)
-
-        if not parallel:
-            self.train_op = self.optim.apply_gradients(self.grad_and_var, name='train_op')
-        else:
-            self.train_op = None
+        self.train_sum = tf.merge_summary([beact_sum, loss_sum, acc_sum, afact_sum] + gv_sum)
 
         # validation sum
         v_loss_sum  = tf.scalar_summary("V_loss", tf.reduce_mean(self.loss))
         v_acc_sum   = tf.scalar_summary("V_accuracy", self.accuracy)
-        self.validate_sum = tf.merge_summary([embed_sum, v_loss_sum, v_acc_sum])
+        self.validate_sum = tf.merge_summary([embed_sum, v_loss_sum, v_acc_sum, gv_sum])
 
 
-    def train(self, sess, vocab_size, epoch=25, learning_rate=0.0002,
-              momentum=0.9, decay=0.95, data_dir="data", dataset_name="cnn",
+    def train(self, sess, vocab_size, epoch=25, data_dir="data", dataset_name="cnn",
               log_dir='log/tmp/', load_path=None, data_size=3000):
 
         print(" [*] Building Network...")
@@ -179,6 +192,8 @@ class AttentiveReader(Model):
                                         vocab_size, self.batch_size, self.max_nsteps, self.max_query_length, size=data_size)
             
             # train
+            running_acc = 0
+            running_loss = 0 
             for batch_idx, docs, d_end, queries, q_end, y in train_iter:
                 _, summary_str, cost, accuracy = sess.run([self.train_op, self.train_sum, self.loss, self.accuracy ],
                                                       feed_dict={self.document: docs,
@@ -189,9 +204,13 @@ class AttentiveReader(Model):
                                                                  }) 
 
                 writer.add_summary(summary_str, counter)
+                running_acc += accuracy
+                running_loss += np.mean(cost)
                 if counter % 10 == 0:
                     print("Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f"
-                        % (epoch_idx, batch_idx, tsteps, time.time() - start_time, np.mean(cost), accuracy))
+                        % (epoch_idx, batch_idx, tsteps, time.time() - start_time, running_loss/10.0, running_acc/10.0))
+                    running_loss = 0
+                    running_acc = 0
                 counter += 1
 
             # validate

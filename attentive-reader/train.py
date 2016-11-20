@@ -24,8 +24,6 @@ flags.DEFINE_string("data_dir", "data", "The name of data directory [data]")
 flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
 flags.DEFINE_string("load_path", None, "The path to old model. [None]")
-flags.DEFINE_boolean("forward_only", False,
-                     "True for forward only, False for training [False]")
 FLAGS = flags.FLAGS
 
 model_dict = {
@@ -67,7 +65,10 @@ def main(_):
 
     print " [*] Initialize Variables..."
     start = time.time()
-    mgr.init_variable(load_path=os.path.join(FLAGS.load_path,'ckpts'))
+    if FLAGS.load_path:
+        mgr.init_variable(load_path=os.path.join(FLAGS.load_path,'ckpts'))
+    else:
+        mgr.init_variable()
     if mgr.load_path is not None:
         print " [*] Load from %s" % mgr.load_path
     print " [*] Variables inited. Use %4.4f" % (time.time() - start)
