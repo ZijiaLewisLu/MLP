@@ -3,43 +3,38 @@ import tensorflow as tf
 import time
 import json
 import numpy as np
-
-from model import DeepLSTM, DeepBiLSTM, AttentiveReader
+from attentive_model import AttentiveReader
 
 from utils import pp, define_gpu, MultiGPU_Manager, load_dataset
 
 flags = tf.app.flags
-flags.DEFINE_integer("epoch", 16, "Epoch to train [40]")
-flags.DEFINE_integer("vocab_size", 50003, "The size of vocabulary [100003]")
-flags.DEFINE_integer("batch_size", 32, "The size of batch images [32]")
+flags.DEFINE_integer("epoch", 15, "Epoch to train")
+flags.DEFINE_integer("vocab_size", 50003, "The size of vocabulary")
+flags.DEFINE_integer("batch_size", 16, "The size of batch images")
 flags.DEFINE_integer("gpu", 2, "the number of gpus to use")
 flags.DEFINE_integer("data_size", 3000, "Number of files to train on")
+flags.DEFINE_integer("hidden_size", 128,
+                     "Hidden dimension for rnn and fully connected layer")
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
 flags.DEFINE_float("dropout", 1.0, "Dropout rate")
-flags.DEFINE_string("model", "Attentive",
-                    "The type of model to train and test [LSTM, BiLSTM, Attentive, Impatient]")
 flags.DEFINE_string("data_dir", "data", "The name of data directory [data]")
 flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
 flags.DEFINE_string("load_path", None, "The path to old model. [None]")
+flags.DEFINE_string("optim", 'RMS', "The optimizer to use [RMS]")
+flags.DEFINE_string("activation", 'none',
+                    "The the last activation layer to use before Softmax loss")
 FLAGS = flags.FLAGS
-
-model_dict = {
-    'LSTM': DeepLSTM,
-    'BiLSTM': DeepBiLSTM,
-    'Attentive': AttentiveReader,
-    'Impatient': None,
-}
 
 
 def main(_):
     pp.pprint(flags.FLAGS.__flags)
 
     # create log dir
-    log_dir = "%s/%s_%s" % (FLAGS.log_dir,
-                            time.strftime("%m_%d_%H_%M"), FLAGS.model)
+    log_dir = "%s/%s" % (FLAGS.log_dir,
+                         time.strftime("%m_%d_%H_%M"))
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
         with open(log_dir + '/Flags.js', 'w') as f:
@@ -50,8 +45,14 @@ def main(_):
 
     # create graph
     def model_gen():
-        m = model_dict[FLAGS.model](
-            batch_size=FLAGS.batch_size, dropout_rate=FLAGS.dropout)
+        m = AttentiveReader(batch_size=FLAGS.batch_size,
+                            dropout_rate=FLAGS.dropout,
+                            momentum=FLAGS.momentum,
+                            decay=FLAGS.decay,
+                            size=FLAGS.hidden_size,
+                            use_optimizer=FLAGS.optim,
+                            activation=FLAGS.activation)
+
         m.prepare_model(parallel=True)
         return m
 
@@ -60,13 +61,13 @@ def main(_):
 
     print "\n\n [*] Building Network..."
     start = time.time()
-    mgr = MultiGPU_Manager( range(FLAGS.gpu) , model_gen)
+    mgr = MultiGPU_Manager(range(FLAGS.gpu), model_gen)
     print " [*] Preparing model finished. Use %4.4f" % (time.time() - start)
 
     print " [*] Initialize Variables..."
     start = time.time()
     if FLAGS.load_path:
-        mgr.init_variable(load_path=os.path.join(FLAGS.load_path,'ckpts'))
+        mgr.init_variable(load_path=os.path.join(FLAGS.load_path, 'ckpts'))
     else:
         mgr.init_variable()
     if mgr.load_path is not None:
@@ -92,9 +93,9 @@ def main(_):
 
     for epoch_idx in xrange(FLAGS.epoch):
         # load data
-        train_iter, tsteps, validate_iter, vsteps = load_dataset(FLAGS.data_dir, FLAGS.dataset, FLAGS.vocab_size, 
-                                                                    total_batch_size, max_nsteps, max_query_length, 
-                                                                    size=FLAGS.data_size)
+        train_iter, tsteps, validate_iter, vsteps = load_dataset(FLAGS.data_dir, FLAGS.dataset, FLAGS.vocab_size,
+                                                                 total_batch_size, max_nsteps, max_query_length,
+                                                                 size=FLAGS.data_size)
 
         # train
         for batch_idx, docs, d_end, queries, q_end, y in train_iter:

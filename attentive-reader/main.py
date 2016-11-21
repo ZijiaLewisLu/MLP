@@ -30,7 +30,7 @@ def main(_):
   if FLAGS.gpu is not None:
     gpu_list  = define_gpu(FLAGS.gpu)
 
-  log_dir = "%s/%s_%s"%(FLAGS.log_dir, time.strftime("%m_%d_%H_%M"), FLAGS.model)
+  log_dir = "%s/%s"%(FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
   if not os.path.exists(log_dir):
     os.makedirs(log_dir)
     with open(log_dir+'/Flags.js','w') as f:

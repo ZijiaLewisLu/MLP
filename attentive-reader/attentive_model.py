@@ -18,7 +18,6 @@ class AttentiveReader():
                  use_optimizer = 'RMS',
                  activation='none'
                  ):
-        super(AttentiveReader, self).__init__()
 
         self.size = size
         self.learning_rate = learning_rate
@@ -151,7 +150,7 @@ class AttentiveReader():
 
 
     def train(self, sess, vocab_size, epoch=25, data_dir="data", dataset_name="cnn",
-              log_dir='log/tmp/', load_path=None, data_size=3000):
+              log_dir='log/tmp/', load_path=None, data_size=3000, save_every=2500):
 
         print(" [*] Building Network...")
         start = time.time()
@@ -231,7 +230,7 @@ class AttentiveReader():
                       %(epoch_idx, time.time()-start_time, running_loss/vsteps, running_acc/vsteps))
 
             # save
-            if (epoch_idx+1) % 3 == 0:
+            if (counter+1) % save_every == 0:
                 self.save(sess, log_dir, global_step=counter)
             print('\n\n')
 

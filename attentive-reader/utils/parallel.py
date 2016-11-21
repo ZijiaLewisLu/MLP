@@ -13,7 +13,7 @@ def define_gpu(num):
 
 class MultiGPU_Manager(object):
 
-    def __init__(self, gpu_list, model_builder, session=None, grad_merge='mean' ):
+    def __init__(self, gpu_list, model_builder, session=None, grad_merge='mean'):
         """ 
         Inputs:
             gpu_list: the id of gpus to use
@@ -59,7 +59,7 @@ class MultiGPU_Manager(object):
         self.main_gpu = self.gpu_list[0]
         with tf.device('/gpu:%d' % self.main_gpu):
             self.main_model = self.model_builder()
-        self.variable_dict = {v.name: v for v in tf.all_variables()}
+        self.variable_dict = {v.name: v for v in tf.trainable_variables()}
 
         # create other models
         models = [self.main_model]
@@ -90,7 +90,7 @@ class MultiGPU_Manager(object):
 
         # create sync_op
         assign_op_dict = {k: [] for k in self.variable_dict.keys()}
-        for v in tf.all_variables():
+        for v in tf.trainable_variables():
             if v.name.startswith('GPU'):
                 k = '/'.join(v.name.split('/')[1:])
                 main_v = self.variable_dict[k]
