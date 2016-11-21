@@ -119,7 +119,7 @@ def batchIter(batch_size, data, pLen, qLen, aLen, stop_id=2):
 
     P = np.zeros([batch_size, pLen])
     Q = np.zeros([batch_size, qLen])
-    A = np.zeros([batch_size, aLen])
+    A = np.zeros([batch_size, aLen, pLen])
 
     p_length = np.zeros([batch_size], dtype=np.int)
     q_length = np.zeros([batch_size], dtype=np.int)
@@ -144,7 +144,9 @@ def batchIter(batch_size, data, pLen, qLen, aLen, stop_id=2):
             p,q,a = sample
             P[i], p_length[i] = _transform(p, pLen, stop_id)
             Q[i], q_length[i] = _transform(q, qLen, stop_id)
-            A[i], a_length[i] = _transform(a, aLen, p_length[i]-1)
+            y, a_length[i] = _transform(a, aLen, p_length[i]-1)
+            for j, _ in enumerate(y):
+                if _ < pLen: A[i,j,_]=1
 
         yield idx, P, p_length, Q, q_length, A, a_length
 

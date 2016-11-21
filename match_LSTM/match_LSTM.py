@@ -1,4 +1,7 @@
 import tensorflow as tf
+from tensorflow.python.ops import rnn_cell
+from cells import Match_cell, Pointer_cell
+
 
 class BASEModel():
     def __init__(self):
@@ -16,163 +19,153 @@ class BASEModel():
 class MatchLSTM():
     
     def __init__(self, p_length, q_length, a_length, batch_size, vocab_size,
-                    embedding_size=64, hidden_size=64, learning_rate=1e-4, 
-                    optim=tf.train.GradientDescentOptimizer
+                    embedding_size=128, hidden_size=128,
+                    optim=tf.train.RMSPropOptimizer(1e-4, momentum=0.9, decay=0.95),
                     ):
         """
         vocab_size, question_length, passage_length, batch_size, embedding_size=128, hidden_size=128
         """
-        self._embedding_size = embedding_size
-        self._hidden_size = hidden_size
-        self._q_length = q_length
-        self._voca_size = vocab_size
-        self._batch_size = batch_size
-        self._p_length = p_length
-        self._a_length = a_length
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.q_length = q_length
+        self.vocab_size = vocab_size
+        self.batch_size = batch_size
+        self.p_length = p_length
+        self.a_length = a_length
 
         self.passage = None
         self.question = None
         self.answer = None
         
-        self.learning_rate = learning_rate
-        self.optim = optim(learning_rate)
+        self.optim = optim
         self.train_op = None
 
-    def match_unit(self, direction, param):
-        Wp, Wr, Bg, WHq, H_p, Wt, Ba, hq_stack = param
-        H = []
-        with tf.variable_scope(direction) as scope:
-            cell = tf.nn.rnn_cell.BasicLSTMCell(self._hidden_size, state_is_tuple=True)
-            state = cell.zero_state(self._batch_size, hq_stack.dtype)
-            h = state.h
-            idx = range(len(H_p))
-            if direction == 'backward': idx=list(reversed(idx))
+    # def match_unit(self, direction, param):
+    #     Wp, Wr, Bg, WHq, H_p, Wt, Ba, hq_stack = param
+    #     H = []
+    #     with tf.variable_scope(direction) as scope:
+    #         cell = tf.nn.rnn_cell.LSTMCell(self.hidden_size, state_is_tuple=True)
+    #         state = cell.zero_state(self.batch_size, hq_stack.dtype)
+    #         h = state.h
+    #         idx = range(len(H_p))
+    #         if direction == 'backward': idx=list(reversed(idx))
 
-            for i in idx:
-                if i != idx[0] :
-                    scope.reuse_variables()
-                # attention
-                G = tf.matmul(H_p[i],Wp)+tf.matmul(h, Wr) + Bg # N, Hidden_size
-                G = tf.tanh(WHq+tf.expand_dims(G,1)) # N,Q,Hidden_size 
-                a = tf.nn.softmax( tf.reduce_sum(G*Wt, 2) + Ba ) # N,Q+1
-                # inputs
-                Hqa = tf.reduce_sum( tf.expand_dims(a, -1) * hq_stack, 1) # N,Hidden_size   
-                z = tf.concat( 1, [H_p[i], Hqa] ) 
-                # lstm
-                h, state = cell(z, state) # N,Hidden_size
-                H.append(h)
-        return H
+    #         for i in idx:
+    #             if i != idx[0] :
+    #                 scope.reuse_variables()
+    #             # attention
+    #             G = tf.matmul(H_p[i],Wp)+tf.matmul(h, Wr) + Bg # N, Hidden_size
+    #             G = tf.tanh(WHq+tf.expand_dims(G,1)) # N,Q,Hidden_size 
+    #             a = tf.nn.softmax( tf.reduce_sum(G*Wt, 2) + Ba ) # N,Q+1
+    #             # inputs
+    #             Hqa = tf.reduce_sum( tf.expand_dims(a, -1) * hq_stack, 1) # N,Hidden_size   
+    #             z = tf.concat( 1, [H_p[i], Hqa] ) 
+    #             # lstm
+    #             h, state = cell(z, state) # N,Hidden_size
+    #             H.append(h)
+    #     return H
 
     def build_model(self):
-        assert self.optim is not None
-
-        self.passage = tf.placeholder(tf.int64, shape=[self._batch_size, self._p_length])
-        self.question = tf.placeholder(tf.int64, shape=[self._batch_size, self._q_length])
-        # shape = tf.convert_to_tensor([self._batch_size, self._a_length, self._p_length+1], dtype=tf.int64)
-        self.answer = tf.placeholder(tf.float32, shape=[self._batch_size, self._a_length, self._p_length+1])
+        self.passage = tf.placeholder(tf.int32, shape=[self.batch_size, self.p_length], name='passage')
+        self.question = tf.placeholder(tf.int32, shape=[self.batch_size, self.q_length],name='question')
+        self.answer = tf.placeholder(tf.int32, shape=[self.batch_size, self.a_length, self.p_length],name='answer')
+        self.p_end = tf.placeholder(tf.int32, shape=[self.batch_size], name='p_end')
+        self.q_end = tf.placeholder(tf.int32, shape=[self.batch_size], name='q_end')
+        self.a_end = tf.placeholder(tf.int32, shape=[self.batch_size], name='a_end')
 
         with tf.variable_scope('embedding'):
-            E_p = tf.get_variable('E_p', shape=[self._voca_size, self._embedding_size])
-            E_q = tf.get_variable('E_q', shape=[self._voca_size, self._embedding_size])
-            p = tf.nn.embedding_lookup(E_p, tf.transpose(self.passage), name='p_embed') # P,N,E 
-            qs = tf.nn.embedding_lookup(E_q, tf.transpose(self.question), name='q_embed') # Q,N,E
+            E_p = tf.get_variable('E_p', shape=[self.vocab_size, self.embedding_size])
+            E_q = tf.get_variable('E_q', shape=[self.vocab_size, self.embedding_size])
+            sep = tf.histogram_summary("E_p",E_p)
+            seq = tf.histogram_summary('E_q',E_q)
+            self.embed_sum = tf.merge_summary([sep, seq])
+            p = tf.nn.embedding_lookup(E_p, self.passage, name='p_embed') # N,P,E 
+            qs = tf.nn.embedding_lookup(E_q,self.question, name='q_embed') # N,Q,E
 
         with tf.variable_scope('preprocess'):
-            p = tf.unpack(p)
-            qs = tf.unpack(qs)
+            # N,T,H
+            H_p, p_final_state = tf.nn.dynamic_rnn(
+                            rnn_cell.LSTMCell(self.hidden_size, state_is_tuple=True),
+                            p, sequence_length=self.p_end, dtype=tf.float32, scope='plstm')
 
-            H_p, p_final_state = tf.nn.rnn(
-                    tf.nn.rnn_cell.LSTMCell(self._hidden_size ), p,
-                    dtype=p[0].dtype, scope='plstm')
+            H_q, q_final_state = tf.nn.dynamic_rnn(
+                            rnn_cell.LSTMCell(self.hidden_size, state_is_tuple=True), 
+                            qs, sequence_length=self.q_end, dtype=tf.float32, scope='qlstm')  
 
-            H_q, q_final_state = tf.nn.rnn(
-                    tf.nn.rnn_cell.LSTMCell(self._hidden_size), qs,
-                    dtype=qs[0].dtype, scope='qlstm')  # [N,Hidden]*T
-
-        with tf.name_scope('match'):
-            Wr = tf.get_variable('Wr', shape=[self._hidden_size, self._hidden_size])
-            Bg = tf.get_variable('Bg', shape=[self._hidden_size])
-            Wt = tf.get_variable('Wt', shape=[self._hidden_size])
-            Ba = tf.get_variable('Ba', shape=[len(H_q)+1])
-            FH = []; BH=[];
+        with tf.variable_scope('match'):
+            Wr = tf.get_variable('Wr', shape=[self.hidden_size, self.hidden_size])
+            Bg = tf.get_variable('Bg', shape=[self.hidden_size])
+            Wt = tf.get_variable('Wt', shape=[self.hidden_size])
+            Ba = tf.get_variable('Ba', shape=[self.q_length])
 
             # calculate WHq for all future use
-            Wq = tf.get_variable('Wq', shape=[self._hidden_size, self._hidden_size])
-            hq_stack = tf.pack(H_q, axis=1) 
-            # append NULL
-            shape = hq_stack.get_shape().as_list()
-            shape[1] = 1
-            hq_stack = tf.concat(1, [hq_stack, tf.zeros(shape, dtype=hq_stack.dtype)]) # N,Q+1,Hidden_size
-
-            hq_shape = hq_stack.get_shape().as_list()
-            hq_shape[0] = -1
-            tmp = tf.reshape(hq_stack, [-1,self._hidden_size]) 
-            WHq = tf.matmul(tmp, Wq) # N*(Q+1), Hidden_size
-            WHq = tf.reshape(WHq, hq_shape) # N,Q+1,Hidden_size
+            Wq = tf.get_variable('Wq', shape=[self.hidden_size, self.hidden_size])
+            tmp = tf.reshape(H_q, [-1, self.hidden_size]) 
+            WHq = tf.matmul(tmp, Wq) # N,Q,Hidden_size
+            WHq = tf.reshape(WHq, [self.batch_size, self.q_length, self.hidden_size]) # N,Q,Hidden_size
             
-            Wp = tf.get_variable('Wp', shape=[self._hidden_size, self._hidden_size])
+            Wp = tf.get_variable('Wp', shape=[self.hidden_size, self.hidden_size])
 
-            pass_param = [Wp, Wr, Bg, WHq, H_p, Wt, Ba, hq_stack]
-            FH = self.match_unit('forward', pass_param)
-            BH = self.match_unit('backward',pass_param)
+            share_param = [Wp, Wr, Bg, WHq, Wt, Ba, H_q]
+            H, p_final_state, = tf.nn.bidirectional_dynamic_rnn(
+                Match_cell(self.hidden_size, share_param, state_is_tuple=True),
+                Match_cell(self.hidden_size, share_param, state_is_tuple=True),
+                H_p, sequence_length=self.p_end, dtype=tf.float32, scope='match')
 
-            H = []
-            for f,b in zip(FH,BH):
-                H.append( tf.concat(1,[f,b] ))
-            # append STOP
-            STOP = tf.zeros_like(H[0])
-            H.append(STOP)
-            self.H=H
+            # N,P,2*H
+            self.H = tf.concat(2,H)
+            # print 'H', self.H.get_shape()
+            # import ipdb
+            # ipdb.set_trace()
 
-        with tf.variable_scope('pointer') as scope:
+        with tf.variable_scope('pointer'):
             # calculate VH for all future use
-            V = tf.get_variable('V', shape=[2*self._hidden_size, self._hidden_size])
-            H_ = tf.pack(self.H, 1) # N, P+1, 2*Hidden_size
-            shape = H_.get_shape().as_list()
-            shape[-1] = int(shape[-1]/2)
-            H = tf.reshape( H, [-1, 2*self._hidden_size] )
-            HV = tf.reshape( tf.matmul(H,V), shape ) # N, P+1, Hidden_size
+            V = tf.get_variable('V', shape=[2*self.hidden_size, self.hidden_size])
+            H_ = tf.reshape( self.H, [-1, 2*self.hidden_size] )
+            HV = tf.reshape( tf.matmul(H_,V), [self.batch_size, self.p_length, self.hidden_size], name='HV') # N, P, H
 
-            Wf = tf.get_variable('Wf', shape=[self._hidden_size, self._hidden_size])
-            Bf = tf.get_variable('Bf', shape=[self._hidden_size])
-            vt = tf.get_variable('vt', shape=[self._hidden_size])
-            c  = tf.get_variable('c', shape=[len(self.H)])
-            self.pointer_cell = tf.nn.rnn_cell.BasicLSTMCell(self._hidden_size, state_is_tuple=True)
-            state = self.pointer_cell.zero_state(self._batch_size, H.dtype)
-            h = state.h
-            score = []
-            # self.predict = []
-            for step in range(self._a_length):
-                if step>0: scope.reuse_variables()
-                F  = tf.matmul(h,Wf)+Bf # N, Hidden_size
-                F  = tf.tanh( HV+tf.expand_dims(F,1) ) # N,P+1,Hidden_size
-                beta = tf.reduce_sum( F*vt, 2 )+c
-                beta = tf.nn.softmax( beta ) # N,P+1
-                score.append(beta)
+            Wf = tf.get_variable('Wf', shape=[self.hidden_size, self.hidden_size])
+            Bf = tf.get_variable('Bf', shape=[self.hidden_size])
+            vt = tf.get_variable('vt', shape=[self.hidden_size])
+            c  = tf.get_variable('c', shape=[self.p_length])
+            share_param = [Wf, Bf, HV, vt, c, self.H]
+
+            pointer_cell = Pointer_cell(self.hidden_size, share_param, state_is_tuple=True)
+            # tf.nn.dynamic_rnn( pointer_cell, self.answer, sequence_length=self.a_length, dtype=tf.float32, scope='lstm')
+            tf.nn.rnn( pointer_cell, tf.unpack(self.answer, axis=1), dtype=tf.float32, scope='lstm')
+
+        epsilon = tf.constant(value=0.00001, shape=[self.p_length])
+        self.score = tf.pack(pointer_cell.score, 1, name='score') + epsilon # N,A,P
+        self.loss = tf.nn.softmax_cross_entropy_with_logits( self.score, self.answer, name='loss')
+        self.loss_sum  = tf.scalar_summary("loss", tf.reduce_mean(self.loss))
 
 
-                inputs = tf.reduce_sum(H_*tf.expand_dims(beta, 2), 2)
-                h, state = self.pointer_cell(inputs, state)
-        
-        epsilon = tf.constant(value=0.00001, shape=[self._p_length+1])
-        self.score = tf.pack(score,1) + epsilon #N,A,P+1
         # self.score = tf.nn.softmax(self.score, name='softmax') 
-        self.prediction = tf.argmax(self.score,2,name='prediction')
-        # correct_predictions = tf.equal(self.prediction, self.answer)
-        # self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
+        prediction = tf.argmax(self.score,2,name='prediction')
+        Y = tf.argmax(self.answer,2)
+        correct_predictions = tf.equal(prediction, Y)
+        self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
+        self.acc_sum   = tf.scalar_summary("accuracy", self.accuracy)
 
         # self.loss = tf.nn.softmax_cross_entropy_with_logits(self.score, self.answer, name='softmax_loss')
-        self.loss = -tf.reduce_sum(self.answer*tf.log(self.score))
+        # self.loss = -tf.reduce_sum(self.answer*tf.log(self.score))
         # y = tf.sparse_tensor_to_dense(self.answer)
         # y = self.answer
         # y_ = tf.log(self.score)
         # print y.dtype, y_.dtype
         # print y.get_shape().as_list(),  y_.get_shape().as_list(), self.score.get_shape().as_list()
         # yy_ = y*y_
-        # print yy_
-        
+
         self.grads_and_vars = self.optim.compute_gradients(self.loss)
+        checker = []
+        for g, v in self.grads_and_vars:
+            name = v.name
+            checker.append( tf.check_numerics(g, "variable:%s"%name) )
+            if g is not None: checker.append( tf.check_numerics(g, "gradient:%s"%name) )
+        self.check_op = tf.group(*checker)
         self.train_op = self.optim.apply_gradients(self.grads_and_vars)
+
+        self.train_sum = tf.merge_summary([self.loss_sum, self.acc_sum])
     
     def contruct_summaries(self):
         grad_summaries = []
@@ -183,8 +176,8 @@ class MatchLSTM():
                 grad_summaries.append(grad_hist_summary)
                 grad_summaries.append(sparsity_summary)
         grad_summaries_merged = tf.merge_summary(grad_summaries)
-        predict_summaries = tf.histogram_summary("prediction", self.prediction)
-        self.summaries = tf.merge_summary([grad_summaries_merged, predict_summaries])
+        # predict_summaries = tf.histogram_summary("prediction", self.prediction)
+        self.summaries = tf.merge_summary([grad_summaries_merged])
         return self.summaries
 
     def step(self, sess, passage, question, answer, train=True):

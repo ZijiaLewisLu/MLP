@@ -150,7 +150,7 @@ class AttentiveReader():
 
 
     def train(self, sess, vocab_size, epoch=25, data_dir="data", dataset_name="cnn",
-              log_dir='log/tmp/', load_path=None, data_size=3000, save_every=2500):
+              log_dir='log/tmp/', load_path=None, data_size=3000, eval_every=2500):
 
         print(" [*] Building Network...")
         start = time.time()
@@ -209,29 +209,30 @@ class AttentiveReader():
                     running_acc = 0
                 counter += 1
 
-            # validate
-            running_acc = 0
-            running_loss = 0 
-            for batch_idx, docs, d_end, queries, q_end, y in validate_iter:
-                validate_sum_str, cost, accuracy = sess.run([self.validate_sum, self.loss, self.accuracy ],
-                                          feed_dict={self.document: docs,
-                                                     self.query: queries,
-                                                     self.d_end: d_end,
-                                                     self.q_end: q_end,
-                                                     self.y: y, 
-                                                     })
-                writer.add_summary(validate_sum_str, counter)
-                running_acc += accuracy
-                running_loss += np.mean(cost)
+                if (counter+1) % eval_every == 0:
+                    # validate
+                    running_acc = 0
+                    running_loss = 0 
+                    for batch_idx, docs, d_end, queries, q_end, y in validate_iter:
+                        validate_sum_str, cost, accuracy = sess.run([self.validate_sum, self.loss, self.accuracy ],
+                                                  feed_dict={self.document: docs,
+                                                             self.query: queries,
+                                                             self.d_end: d_end,
+                                                             self.q_end: q_end,
+                                                             self.y: y, 
+                                                             })
+                        writer.add_summary(validate_sum_str, counter)
+                        running_acc += accuracy
+                        running_loss += np.mean(cost)
 
-            ACC.append(running_acc/vsteps)
-            LOSS.append(running_loss/vsteps)
-            print("Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f"
-                      %(epoch_idx, time.time()-start_time, running_loss/vsteps, running_acc/vsteps))
+                    ACC.append(running_acc/vsteps)
+                    LOSS.append(running_loss/vsteps)
+                    print("Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f"
+                              %(epoch_idx, time.time()-start_time, running_loss/vsteps, running_acc/vsteps))
 
-            # save
-            if (counter+1) % save_every == 0:
-                self.save(sess, log_dir, global_step=counter)
+                    # save
+                    self.save(sess, log_dir, global_step=counter)
+           
             print('\n\n')
 
     def save(self, sess, log_dir, global_step=None):
