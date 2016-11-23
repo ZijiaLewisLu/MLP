@@ -5,7 +5,7 @@ from match_LSTM import MatchLSTM
 import data_utils as D
 import numpy as np
 import time
-from datetime import timedelta
+# from datetime import timedelta
 import os
 # import json
 
@@ -20,14 +20,14 @@ if FLAGS.test:
     num_epoch = 1
 else:
     num_epoch = FLAGS.epoch
-batch_size = 10
+batch_size = 32
 vocab_size = 50000
 small_size = 1000
 learning_rate = 1e-1
 pLen=300
 qLen=20 
 aLen=10 
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 
 # # prepare data
@@ -84,19 +84,26 @@ for e in range(num_epoch):
             model.a_end: a_end,
         }
 
-        fetch = [ model.train_op, model.check_op, model.accuracy, model.loss, model.train_sum]
+        fetch = [ model.train_op, model.check_op, model.accuracy, model.loss, model.train_sum, model.score ]
 
-        _, _, acc, loss, summary = sess.run( fetch, feed )
+        _, _, acc, loss, summary, score = sess.run( fetch, feed )
+        # import ipdb; ipdb.set_trace()
 
         writer.add_summary(summary, counter)
         running_acc += acc
-        running_loss += np.mean(loss)
+        running_loss += np.sum(loss)/np.sum(a_end)
         if counter % 10 == 0:
             print "Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f" \
                 % (e, idx, tstep, time.time() - start_time, running_loss/10.0, running_acc/10.0)
             running_loss = 0
             running_acc = 0
         counter += 1
+
+        if counter % 20 == 0:
+            score = np.argmax(score, -1)
+            y = np.argmax(A,-1)
+            print score[:5]
+            print y[:5]
 
         if (counter+1) % 1000 == 0:
             saver.save(sess, os.path.join(save_dir, 'model'), global_step=counter)
@@ -114,11 +121,13 @@ for e in range(num_epoch):
             model.a_end: a_end,
         }
 
-        fetch = [model.check_op, model.accuracy, model.loss]
+        fetch = [model.accuracy, model.loss, model.validate_sum]
 
-        _, acc, loss = sess.run( fetch, feed )
-        
+        acc, loss, vsummary = sess.run( fetch, feed )
+        writer.add_summary(vsummary, counter)
+
         running_acc += acc
         running_loss += np.mean(loss)
-        print "Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f" \
-                            %(e, time.time()-start_time, running_loss/vstep, running_acc/vstep)
+    print "Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f" \
+                        %(e, time.time()-start_time, running_loss/vstep, running_acc/vstep)
+

@@ -90,7 +90,7 @@ class MatchLSTM():
 
             H_q, q_final_state = tf.nn.dynamic_rnn(
                             rnn_cell.LSTMCell(self.hidden_size, state_is_tuple=True), 
-                            qs, sequence_length=self.q_end, dtype=tf.float32, scope='qlstm')  
+                            qs, sequence_length=self.q_end, dtype=tf.float32, scope='qlstm')
 
         with tf.variable_scope('match'):
             Wr = tf.get_variable('Wr', shape=[self.hidden_size, self.hidden_size])
@@ -136,16 +136,25 @@ class MatchLSTM():
 
         epsilon = tf.constant(value=0.00001, shape=[self.p_length])
         self.score = tf.pack(pointer_cell.score, 1, name='score') + epsilon # N,A,P
+        # logit = tf.nn.log_softmax(self.score, name='logit')
+        # self.answer = tf.cast(self.answer, tf.float32)
+        # self.loss = -logit*self.answer
+
+        base = tf.cast(tf.reduce_sum(self.a_end),"float")
         self.loss = tf.nn.softmax_cross_entropy_with_logits( self.score, self.answer, name='loss')
-        self.loss_sum  = tf.scalar_summary("loss", tf.reduce_mean(self.loss))
+        self.loss_sum  = tf.scalar_summary("loss", tf.reduce_sum(self.loss)/base)
+        self.vloss_sum  = tf.scalar_summary("V_loss", tf.reduce_sum(self.loss)/base)
 
 
         # self.score = tf.nn.softmax(self.score, name='softmax') 
         prediction = tf.argmax(self.score,2,name='prediction')
         Y = tf.argmax(self.answer,2)
         correct_predictions = tf.equal(prediction, Y)
-        self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
+        mask = tf.greater(Y, tf.zeros_like(Y), name='accuracy_mask')
+        correct_predictions = tf.logical_and(mask, correct_predictions)
+        self.accuracy = tf.reduce_sum(tf.cast(correct_predictions, "float")) / base 
         self.acc_sum   = tf.scalar_summary("accuracy", self.accuracy)
+        self.vacc_sum   = tf.scalar_summary("V_accuracy", self.accuracy)
 
         # self.loss = tf.nn.softmax_cross_entropy_with_logits(self.score, self.answer, name='softmax_loss')
         # self.loss = -tf.reduce_sum(self.answer*tf.log(self.score))
@@ -165,20 +174,22 @@ class MatchLSTM():
         self.check_op = tf.group(*checker)
         self.train_op = self.optim.apply_gradients(self.grads_and_vars)
 
-        self.train_sum = tf.merge_summary([self.loss_sum, self.acc_sum])
+        self.gv_sum = self.contruct_summaries()
+        self.train_sum = tf.merge_summary([self.loss_sum, self.acc_sum, self.gv_sum])
+        self.validate_sum = tf.merge_summary([self.vloss_sum, self.vacc_sum, self.embed_sum])
     
     def contruct_summaries(self):
         grad_summaries = []
         for g, v in self.grads_and_vars:
             if g is not None:
-                grad_hist_summary = tf.histogram_summary("{}/grad/hist".format(v.name), g)
-                sparsity_summary = tf.scalar_summary("{}/grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
-                grad_summaries.append(grad_hist_summary)
-                grad_summaries.append(sparsity_summary)
+                gs = tf.scalar_summary("I_{}-grad".format(v.name), tf.reduce_mean(g))
+                vs = tf.scalar_summary("I_{}-var".format(v.name), tf.reduce_mean(v))
+                grad_summaries.append(gs)
+                grad_summaries.append(vs)
         grad_summaries_merged = tf.merge_summary(grad_summaries)
         # predict_summaries = tf.histogram_summary("prediction", self.prediction)
-        self.summaries = tf.merge_summary([grad_summaries_merged])
-        return self.summaries
+        # self.summaries = tf.merge_summary([grad_summaries_merged])
+        return grad_summaries_merged
 
     def step(self, sess, passage, question, answer, train=True):
         """

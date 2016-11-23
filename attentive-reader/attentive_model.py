@@ -10,7 +10,7 @@ class AttentiveReader():
     """Attentive Reader."""
 
     def __init__(self, vocab_size=50003, batch_size=32,
-                 learning_rate=1e-4, momentum=0.9, decay=0.95, 
+                 learning_rate=1e-4, momentum=0.9, decay=0.95, l2_rate=1e-4,
                  size=256,
                  max_nsteps=1000,
                  max_query_length=20,
@@ -26,6 +26,7 @@ class AttentiveReader():
         self.max_query_length = max_query_length
         self.vocab_size = vocab_size
         self.dropout = dropout_rate
+        self.l2_rate = l2_rate
         self.momentum = momentum
         self.decay = decay
         self.use_optimizer = use_optimizer
@@ -110,6 +111,9 @@ class AttentiveReader():
         afact_sum = tf.scalar_summary('before activitation_after', tf.reduce_mean(g))
 
         self.loss = tf.nn.softmax_cross_entropy_with_logits(g, self.y, name='loss')
+        for v in tf.trainable_variables():
+            if v.name.endswith('Matrix:0') or v.name.startswith('W'):
+                self.loss += self.l2_rate*tf.nn.l2_loss(v, name="%s-l2loss"%v.name[:-2])
         loss_sum  = tf.scalar_summary("loss", tf.reduce_mean(self.loss))
 
         correct_prediction = tf.equal(tf.argmax(self.y, 1), tf.argmax(g, 1))
@@ -148,9 +152,11 @@ class AttentiveReader():
         v_acc_sum   = tf.scalar_summary("V_accuracy", self.accuracy)
         self.validate_sum = tf.merge_summary([embed_sum, v_loss_sum, v_acc_sum, gv_sum])
 
+        # import ipdb; ipdb.set_trace()
+
 
     def train(self, sess, vocab_size, epoch=25, data_dir="data", dataset_name="cnn",
-              log_dir='log/tmp/', load_path=None, data_size=3000, eval_every=2500):
+              log_dir='log/tmp/', load_path=None, data_size=3000, eval_every=1500):
 
         print(" [*] Building Network...")
         start = time.time()
@@ -213,6 +219,8 @@ class AttentiveReader():
                     # validate
                     running_acc = 0
                     running_loss = 0 
+                    _, _, validate_iter, vsteps = load_dataset(data_dir, dataset_name, \
+                                        vocab_size, self.batch_size, self.max_nsteps, self.max_query_length, size=data_size)
                     for batch_idx, docs, d_end, queries, q_end, y in validate_iter:
                         validate_sum_str, cost, accuracy = sess.run([self.validate_sum, self.loss, self.accuracy ],
                                                   feed_dict={self.document: docs,

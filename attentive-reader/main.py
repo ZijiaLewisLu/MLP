@@ -15,7 +15,8 @@ flags.DEFINE_integer("hidden_size", 268, "Hidden dimension for rnn and fully con
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
-flags.DEFINE_float("dropout", 1.0 , "Dropout rate")
+flags.DEFINE_float("dropout", 0.9, "Dropout rate")
+flags.DEFINE_float("l2_rate", 5e-4, "Dropout rate")
 flags.DEFINE_string("data_dir", "data", "The name of data directory [data]")
 flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
@@ -41,7 +42,7 @@ def main(_):
 
 
   with tf.Session() as sess:
-    model = AttentiveReader(batch_size=FLAGS.batch_size, dropout_rate=FLAGS.dropout,
+    model = AttentiveReader(batch_size=FLAGS.batch_size, dropout_rate=FLAGS.dropout, l2_rate=FLAGS.l2_rate,
                                     momentum=FLAGS.momentum, decay=FLAGS.decay,
                                     size=FLAGS.hidden_size,
                                     use_optimizer=FLAGS.optim,
