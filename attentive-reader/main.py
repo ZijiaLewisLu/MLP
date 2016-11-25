@@ -1,3 +1,4 @@
+#! /usr/bin/python
 import os
 import tensorflow as tf
 import time
@@ -10,8 +11,9 @@ flags.DEFINE_integer("epoch", 15, "Epoch to train [40]")
 flags.DEFINE_integer("vocab_size", 50003, "The size of vocabulary [10000]")
 flags.DEFINE_integer("batch_size", 32, "The size of batch images [32]")
 flags.DEFINE_integer("gpu", 1, "the number of gpus to use")
-flags.DEFINE_integer("data_size", 8000, "Number of files to train on")
+flags.DEFINE_integer("data_size", None, "Number of files to train on")
 flags.DEFINE_integer("hidden_size", 268, "Hidden dimension for rnn and fully connected layer")
+flags.DEFINE_integer("eval_every", 1000, "Eval every step")
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
@@ -51,7 +53,7 @@ def main(_):
 
     model.train(sess, FLAGS.vocab_size, FLAGS.epoch,
                   FLAGS.data_dir, FLAGS.dataset, log_dir, FLAGS.load_path,
-                  FLAGS.data_size)
+                  FLAGS.data_size, FLAGS.eval_every)
 
 if __name__ == '__main__':
   tf.app.run()

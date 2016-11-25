@@ -150,7 +150,7 @@ class AttentiveReader():
         # validation sum
         v_loss_sum  = tf.scalar_summary("V_loss", tf.reduce_mean(self.loss))
         v_acc_sum   = tf.scalar_summary("V_accuracy", self.accuracy)
-        self.validate_sum = tf.merge_summary([embed_sum, v_loss_sum, v_acc_sum, gv_sum])
+        self.validate_sum = tf.merge_summary([embed_sum, v_loss_sum, v_acc_sum])
 
         # import ipdb; ipdb.set_trace()
 
@@ -184,6 +184,7 @@ class AttentiveReader():
             print(" [*] No checkpoint to load, all variable inited")
 
         counter = 0
+        vcounter = 0
         start_time = time.time()
         ACC = []
         LOSS = []
@@ -229,12 +230,14 @@ class AttentiveReader():
                                                              self.q_end: q_end,
                                                              self.y: y, 
                                                              })
-                        writer.add_summary(validate_sum_str, counter)
+                        writer.add_summary(validate_sum_str, vcounter)
                         running_acc += accuracy
                         running_loss += np.mean(cost)
+                        vcounter += 1
 
                     ACC.append(running_acc/vsteps)
                     LOSS.append(running_loss/vsteps)
+                    vcounter += vsteps
                     print("Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f"
                               %(epoch_idx, time.time()-start_time, running_loss/vsteps, running_acc/vsteps))
 
