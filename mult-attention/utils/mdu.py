@@ -1,10 +1,12 @@
 import json
-import six
 import numpy as np
 import random
 import os
-from nltk.tokenize import RegexpTokenizer
-word_tokenize = RegexpTokenizer(r'\w+').tokenize
+from tqdm import tqdm
+import re
+from glob import glob
+
+_START_VOCAB = ["<PAD>", "<UNK>", "<STOP>"]
 
 
 def format_data(js):
@@ -12,24 +14,84 @@ def format_data(js):
     fours = []
     for article in data_list:
         for passage in article['paragraphs']:
-            context = passage['context'].lower().strip()  # unicode string
+            context = passage['context'].strip()  # unicode string
             for qa in passage['qas']:
                 q = qa['question']  # unicode string
                 a = qa['answers']   # list of dicts
-                assert len(a) == 1, a
+                # assert len(a) == 1, a
+                if len(a) > 1:
+                    print 'multiple answer', a
+                    a = a[0:1]
                 fours.append((
                     context,
-                    q.lower().strip(), 
-                    a[0]['text'].lower().strip(), 
-                    int(a[0]['answer_start']))) 
+                    q.strip(),
+                    a[0]['text'].strip(),
+                    int(a[0]['answer_start'])))
     return fours
 
+def filter_data(fours, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
+    good = []
+    abr = []
+    bad = []
+    mys = []
+    for c, q, a, start in tqdm(fours):
+        into = False
+        # get delimiter location
+        period_loc = [_.start(2) + 1 for _ in re.finditer(exps, c)]
+        period_loc.insert(0, 0)
+        if period_loc[-1] != len(c):
+            period_loc.append(len(c))
 
-def create_vocab(fours, cap=None):
-    X = [ " ".join(_[:3]) for _ in fours]
-    X = "  ".join(X)
-    X = word_tokenize(X)
-    voca = {"<PAD>": 0, "<UNK>": 1, "<STOP>": 2}
+        # get answer location
+        for i in range(len(period_loc) - 1):
+            h = period_loc[i]
+            t = period_loc[i + 1]
+            if h <= start and start < t:
+                into = True
+
+                if c[start] != a[0]:
+                    bad.append([c, q, a, start, period_loc, i])
+                elif start + len(a) > t:
+                    abr.append([c, q, a, start, period_loc, i])
+                else:
+                    good.append([c, q, a, start, period_loc, i])
+
+                break
+
+        if not into:
+            mys.append([c, q, a, start, period_loc, None])
+
+    print "#good:%d #bad_sample:%d #confusing abbrevation:%d #mysterious:%d #all:%d" \
+        % (len(good), len(bad), len(abr), len(mys), len(fours))
+    return good, bad, abr, mys
+
+
+def token_sample(data, replace=u"['\",\/#$%\^&\*:{}=\-_`~()\[\]\s]+", normalize_digit=True):
+    c, q, a, start, period_loc, asi = data
+    sentence = []
+    for i in range(len(period_loc) - 1):
+        s = c[period_loc[i]:period_loc[i + 1]].strip('. ').lower()
+        s = re.sub(replace, ' ', s)
+        if normalize_digit:
+            s = re.sub('\d', '0', s)
+        s = s.strip(' ').split(' ')
+        sentence.append(s)
+
+    q = q.strip(' ?').lower()
+    q = re.sub(replace, ' ', q)
+    if normalize_digit:
+        q = re.sub('\d', '0', q)
+    q = q.strip(' ').split(' ')
+
+    return [sentence, q, asi]
+
+
+def create_vocab(data_triple, cap=None):
+    X = []
+    for sentence, q, asi in data_triple:
+        sentence.append(q)
+        for s in sentence:
+            X.extend(s)
 
     # calculate frequency
     f = {}
@@ -39,139 +101,140 @@ def create_vocab(fours, cap=None):
         else:
             f[t] = 1
 
+    vocab_list = _START_VOCAB + sorted(f, key=f.get, reverse=True)
     if cap is not None and cap < len(f):
-        print cap
-        f = sorted(sorted(six.iteritems(f), key=lambda x: (isinstance(x[0], str), x[0])),
-                   key=lambda x: x[1], reverse=True)[:cap-len(voca)]
-    else:
-        f = f.items()
+        vocab_list = vocab_list[:cap]
 
     # build vocab
-    add = len(voca)
-    for i, p in enumerate(f):
-        voca[p[0]] = i + add
-    return voca
+    vocab = {k: i for i, k in enumerate(vocab_list)}
+    return vocab
 
-def tokenize_data(vocab, data):
-    unk_id = vocab['<UNK>']
-    # stop_id = vocab['<STOP>']
-    w2id = lambda x: vocab.get(x, unk_id)
+def data2id(data, vocab, unk="<UNK>"):
+    unk_id = vocab[unk]
+    trans = lambda x: vocab.get(x,unk_id)
+    ids = []
+    for sen, qa, aid in data:
+        sen = [ map(trans, _) for _ in sen ]
+        qa = map(trans, qa)
+        ids.append([sen,qa,aid])
+    return ids
 
-    result = []
-    for index, _ in enumerate(data):
-        p, q, a, s = _
+def token_data(origin_file, save_name, normalize_digit=True):
+    if os.path.exists(save_name):
+        with open(save_name, 'r') as f:
+            formated = json.load(f)
+    else:
+        with open(origin_file, 'r') as f:
+            squad = json.load(f)
+        fours = format_data(squad)
+        good, bad, abr, mys = filter_data(fours)
+        formated = [ token_sample(_, normalize_digit=normalize_digit) for _ in good ]
+        with open(save_name, 'w') as f:
+            json.dump(formated, f, indent=4)
+    return formated
 
-        start = len(word_tokenize(p[:s]))
-        p = word_tokenize(p)
-        a = word_tokenize(a)        
-        aid = [start + i for i in range(len(a))]
-        if len(aid) == 0 or aid[-1] >= len(p):
-            continue
-        q = word_tokenize(q)
-
-        p = map(w2id,p)
-        q = map(w2id,q)
-        # p.append(stop_id)
-        # q.append(stop_id)
-        # aid.append(len(p)-1)
-        result.append([p,q,aid])
-    return result
-
-def process_data(js='./squad/train-v1.1.json', save_path='./squad/', cap=None):
-    with open(js, 'r') as f:
-        squad = json.load(f)
-    fours = format_data(squad)
+def process_data(data_path='../data/squad', save_path='../data/squad/', cap=None, normalize_digit=True):
     
+    train_js = glob( os.path.join(data_path, 'train-v*.json') )[0]
+    dev_js = glob( os.path.join(data_path, 'dev-v*.json') )[0]
+
+    # token data
+    formated_save_path = os.path.join(save_path, 'formated')
+    train_token = token_data(train_js, formated_save_path+'_train.js', normalize_digit=normalize_digit)
+    dev_token = token_data(dev_js, formated_save_path+'_dev.js', normalize_digit=normalize_digit)
+
+    # load vocab
     if cap is None:
         vocab_path = os.path.join(save_path, 'vocab_full.js')
     else:
-        vocab_path = os.path.join(save_path, 'vocab_%d.js'%cap)
-
+        vocab_path = os.path.join(save_path, 'vocab_%d.js' % cap)
     if os.path.exists(vocab_path):
         with open(vocab_path, 'r') as f:
             vocab = json.load(f)
+        print 'Vocabulary loaded'
     else:
-        vocab = create_vocab(fours, cap=cap)
+        vocab = create_vocab(formated, cap=cap)
         with open(vocab_path, 'w') as f:
             json.dump(vocab, f, indent=4)
-    
-    ids_path = os.path.join(save_path, 'ids_vocab%d.js'%len(vocab))
-    ids = tokenize_data(vocab, fours)
-    with open(ids_path, 'w') as f:
-        json.dump(ids, f, indent=4)
-    return ids
+        print 'Vocabulary created'
 
-def _transform(d,l,end,pad=0):
+    # transform data
+    ids_path = os.path.join(save_path, 'ids_vocab%d' % len(vocab))
+    train_ids = data2id(train_token, vocab)
+    dev_ids = data2id(dev_token, vocab)
+    with open(ids_path+'_train.json', 'w') as f:
+        json.dump(train_ids, f, indent=4)
+    with open(ids_path+'_dev.json', 'w') as f:
+        json.dump(dev_ids, f, indent=4)
+
+def _transform(d, l, end, pad=0):
     if len(d) >= l:
-        d[l-1] = end
+        d[l - 1] = end
         return d[:l], l
     else:
         d.append(end)
         l_ = len(d)
-        d = d + [pad]*(l-l_)
+        d = d + [pad] * (l - l_)
         return d, l_
 
-def batchIter(batch_size, data, pLen, qLen, aLen, stop_id=2):
+
+def batchIter(batch_size, data, sN, sL, qL, stop_id=2):
     N = len(data)
     steps = np.ceil(N / float(batch_size))
     steps = int(steps)
     yield steps
 
-    P = np.zeros([batch_size, pLen])
-    Q = np.zeros([batch_size, qLen])
-    A = np.zeros([batch_size, aLen, pLen])
+    P = np.zeros([batch_size, sN, sL])
+    Q = np.zeros([batch_size, qL])
+    A = np.zeros([batch_size])
 
-    p_length = np.zeros([batch_size], dtype=np.int)
-    q_length = np.zeros([batch_size], dtype=np.int)
-    a_length = np.zeros([batch_size], dtype=np.int)
+    p_len = np.zeros([batch_size, sN], dtype=np.int)
+    q_len = np.zeros([batch_size], dtype=np.int)
 
     for idx in range(steps):
         start = idx * batch_size
         end = (idx + 1) * batch_size
         if end > N:
-            batch = data[start:]+data[:end-N]
+            batch = data[start:] + data[:end - N]
         else:
             batch = data[start:end]
 
         P.fill(0)
         Q.fill(0)
         A.fill(0)
-        p_length.fill(0)
-        q_length.fill(0)
-        a_length.fill(0)
+        p_len.fill(0)
+        q_len.fill(0)
 
         for i, sample in enumerate(batch):
-            p,q,a = sample
-            P[i], p_length[i] = _transform(p, pLen, stop_id)
-            Q[i], q_length[i] = _transform(q, qLen, stop_id)
-            y, a_length[i] = _transform(a, aLen, p_length[i]-1)
-            for j, _ in enumerate(y):
-                if _ < pLen: A[i,j,_]=1
+            sens, q, aid = sample
+            for j, s in enumerate(sens[:sN]):
+                P[i,j], p_len[i,j] = _transform(s, sL, stop_id)
+            Q[i], q_len[i] = _transform(q, qL, stop_id)
+            A[i] = aid
 
-        yield idx, P, p_length, Q, q_length, A, a_length
+        yield idx, P, p_len, Q, q_len, A
 
-def load_data(data_dir='./squad/', batch_size=64, vocab_size=50000, 
-                pLen=300, qLen=20, aLen=10, 
-                shuffle=False, split_rate=0.9,
-                stop_id=2, data_size=None):
-    """
-    To take full length: pLen=677, qLen=40, aLen=43, 
-    """ 
-    ids_path = os.path.join(data_dir, 'ids_vocab%d.js'%vocab_size)
-    with open(ids_path, 'r') as f:
+
+def load_data(data_dir='/home/zijia/nlp/proj/mult-attention/data/squad/', batch_size=64, vocab_size=50000,
+              sN=10, sL=50, qL=15,
+              shuffle=True, split_rate=0.9,
+              stop_id=2, data_size=None):
+    # (TODO) use dev data
+    train_ids_path = os.path.join(data_dir, 'ids_vocab%d_train.json' % vocab_size)
+    with open(train_ids_path, 'r') as f:
         data = json.load(f)
-    
+
     if data_size:
         data = data[:data_size]
 
     if shuffle:
-        data = random.shuffle(data)
+        random.shuffle(data)
     part = int(np.floor(len(data) * split_rate))
     train = data[:part]
     validate = data[part:]
 
-    titer = batchIter(batch_size, train, pLen, qLen, aLen, stop_id=stop_id)
-    viter = batchIter(batch_size, validate, pLen, qLen, aLen, stop_id=stop_id)
+    titer = batchIter(batch_size, train, sN, sL, qL, stop_id=stop_id)
+    viter = batchIter(batch_size, validate, sN, sL, qL, stop_id=stop_id)
 
     tstep = titer.next()
     vstep = viter.next()
