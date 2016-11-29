@@ -57,8 +57,25 @@ class ML_Attention(object):
         correct_prediction = tf.equal(prediction, self.answer)
         self.accuracy = tf.reduce_mean( tf.cast(correct_prediction, tf.int32) )
 
-        self.optim = tf.train.AdamOptimizer(learning_rate)
-        self.train_op = self.optim.minimize(self.loss)
+        # self.optim = tf.train.AdamOptimizer(learning_rate)
+        self.optim = tf.train.GradientDescentOptimizer(learning_rate)
+        self.gvs = self.optim.compute_gradients(self.loss)
+        self.train_op = self.optim.apply_gradients(self.gvs)
 
+        # checkers = []
+        # for g,v in self.gvs:
+        #     name = v.name
+        #     checkers.append( tf.check_numerics(v, 'V/%s'%name) )
+        #     if g is not None: checkers.append( tf.check_numerics(g, 'G/%s'%name) )
+        # self.check_op = tf.group(*checkers)
+        self.check_op = tf.add_check_numerics_ops()
+        
+        accu_sum = tf.scalar_summary( 'T_accuracy', self.accuracy )
+        loss_sum = tf.scalar_summary( 'T_loss', tf.reduce_mean(self.loss))
+        self.train_summary = tf.merge_summary([accu_sum, loss_sum])
+
+        Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy )
+        Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
+        self.train_summary = tf.merge_summary([Vaccu_sum, Vloss_sum])
     # def step(self, input_feed)
 
