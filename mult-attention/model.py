@@ -11,7 +11,7 @@ class ML_Attention(object):
         self.p_len   = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
         self.query   = tf.placeholder(tf.int32, [batch_size, qL], name='query')
         self.q_len   = tf.placeholder(tf.int32, [batch_size], name='q_len')
-        self.answer  = tf.placeholder(tf.int64, [batch_size], name='answer')
+        self.answer  = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
 
         self.emb = tf.get_variable("emb", [vocab_size, embed_size])
         embed_p = tf.nn.embedding_lookup(self.emb, self.passage, name='embed_p') # N,sN,sL,E
@@ -51,11 +51,12 @@ class ML_Attention(object):
             atten = tf.pack(atten, axis=1, name='attention') # N, sN
 
         self.score = atten
-        self.loss = tf.nn.sparse_softmax_cross_entropy_with_logits( self.score, self.answer, name='loss' )
+        self.loss = tf.nn.softmax_cross_entropy_with_logits( self.score, self.answer, name='loss' )
 
         prediction = tf.argmax(self.score, 1)
-        correct_prediction = tf.equal(prediction, self.answer)
-        self.accuracy = tf.reduce_mean( tf.cast(correct_prediction, tf.int32) )
+        answer_id  = tf.argmax(self.answer, 1)
+        self.correct_prediction = tf.equal(prediction, answer_id)
+        self.accuracy = tf.reduce_mean( tf.cast(self.correct_prediction, tf.float16) )
 
         # self.optim = tf.train.AdamOptimizer(learning_rate)
         self.optim = tf.train.GradientDescentOptimizer(learning_rate)
@@ -63,13 +64,23 @@ class ML_Attention(object):
         self.train_op = self.optim.apply_gradients(self.gvs)
 
         # checkers = []
+        # self.names = [ gv[1].name for gv in self.gvs ]
+        # self.vmeans = []
+        # self.gmeans = []
         # for g,v in self.gvs:
-        #     name = v.name
-        #     checkers.append( tf.check_numerics(v, 'V/%s'%name) )
-        #     if g is not None: checkers.append( tf.check_numerics(g, 'G/%s'%name) )
+        #     # self.mean.append
+        #     self.vmeans.append(tf.reduce_mean(v))
+        #     self.gmeans.append(tf.reduce_mean(g))
+            # self.means += new
+            # if g is not None: checkers.append( tf.check_numerics(g, 'G/%s'%name) )
         # self.check_op = tf.group(*checkers)
+
         self.check_op = tf.add_check_numerics_ops()
-        
+        checker = [self.check_op]
+        for i, s in enumerate(sentence):
+            checker.append(tf.check_numerics(s, 'bow%d'%i))
+        self.sentence_check = tf.group( *checker )
+
         accu_sum = tf.scalar_summary( 'T_accuracy', self.accuracy )
         loss_sum = tf.scalar_summary( 'T_loss', tf.reduce_mean(self.loss))
         self.train_summary = tf.merge_summary([accu_sum, loss_sum])

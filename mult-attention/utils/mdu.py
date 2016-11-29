@@ -162,10 +162,19 @@ def process_data(data_path='../data/squad', save_path='../data/squad/', cap=None
     ids_path = os.path.join(save_path, 'ids_vocab%d' % len(vocab))
     train_ids = data2id(train_token, vocab)
     dev_ids = data2id(dev_token, vocab)
-    with open(ids_path+'_train.json', 'w') as f:
-        json.dump(train_ids, f, indent=4)
-    with open(ids_path+'_dev.json', 'w') as f:
-        json.dump(dev_ids, f, indent=4)
+
+    def save(_fname, _data):
+        with open(_fname, 'w') as f:
+            for seq, qur, aid in _data:
+                N = len(seq)
+                f.write( "%d\n"%N )
+                for s in seq:
+                    f.write( " ".join(map(str,s))+'\n' )
+                f.write( " ".join(map(str,qur))+'\n' )
+                f.write( "%d\n\n"%aid )
+
+    save( ids_path+'_train.txt', train_ids )
+    save( ids_path+'_dev.txt',   dev_ids )
 
 def _transform(d, l, end, pad=0):
     if len(d) >= l:
@@ -184,12 +193,12 @@ def batchIter(batch_size, data, sN, sL, qL, stop_id=2):
     steps = int(steps)
     yield steps
 
-    P = np.zeros([batch_size, sN, sL])
-    Q = np.zeros([batch_size, qL])
-    A = np.zeros([batch_size])
+    P = np.zeros([batch_size, sN, sL], dtype=np.int32)
+    Q = np.zeros([batch_size, qL], dtype=np.int32)
+    A = np.zeros([batch_size, sN], dtype=np.int32)
 
-    p_len = np.zeros([batch_size, sN], dtype=np.int)
-    q_len = np.zeros([batch_size], dtype=np.int)
+    p_len = np.zeros([batch_size, sN], dtype=np.int32)
+    q_len = np.zeros([batch_size], dtype=np.int32)
 
     for idx in range(steps):
         start = idx * batch_size
@@ -210,19 +219,38 @@ def batchIter(batch_size, data, sN, sL, qL, stop_id=2):
             for j, s in enumerate(sens[:sN]):
                 P[i,j], p_len[i,j] = _transform(s, sL, stop_id)
             Q[i], q_len[i] = _transform(q, qL, stop_id)
-            A[i] = aid
+            if aid < sN:
+                A[i][aid] = 1
 
         yield idx, P, p_len, Q, q_len, A
 
+
+def _load(_fname):
+    D = []
+    with open(_fname, 'r') as f:
+        line = f.readline()
+        while line:
+            n = int(line)
+            sen = []
+            for i in range(n):
+                new = f.readline().strip('\n').split()
+                new = map(int, new)
+                sen.append(new)
+            que = f.readline().strip('\n').split()
+            que = map(int, que)
+            aid = int(f.readline())
+            D.append( [sen, que, aid] )
+            f.readline()
+            line = f.readline() 
+    return D
 
 def load_data(data_dir='/home/zijia/nlp/proj/mult-attention/data/squad/', batch_size=64, vocab_size=50000,
               sN=10, sL=50, qL=15,
               shuffle=True, split_rate=0.9,
               stop_id=2, data_size=None):
     # (TODO) use dev data
-    train_ids_path = os.path.join(data_dir, 'ids_vocab%d_train.json' % vocab_size)
-    with open(train_ids_path, 'r') as f:
-        data = json.load(f)
+    train_ids_path = os.path.join(data_dir, 'ids_vocab%d_train.txt' % vocab_size)
+    data = _load(train_ids_path)
 
     if data_size:
         data = data[:data_size]
