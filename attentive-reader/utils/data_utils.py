@@ -293,6 +293,12 @@ def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_
 
     return titer, tstep, viter, vstep
 
+def fetch_files(data_dir, dataset_name, vocab_size):
+    train = glob(os.path.join(data_dir, dataset_name, "questions",
+                              "training", "*.question.ids%s_*" % (vocab_size)))
+    validate = glob(os.path.join(data_dir, dataset_name, "questions",
+                              "validation", "*.question.ids%s_*" % (vocab_size)))
+    return train, validate
 
 if __name__ == '__main__':
     pass

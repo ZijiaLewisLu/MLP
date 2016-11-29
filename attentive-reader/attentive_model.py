@@ -3,7 +3,7 @@ import os
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
-from utils import load_dataset
+from utils import load_dataset, fetch_files, data_iter
 
 
 class AttentiveReader():
@@ -156,7 +156,7 @@ class AttentiveReader():
 
 
     def train(self, sess, vocab_size, epoch=25, data_dir="data", dataset_name="cnn",
-              log_dir='log/tmp/', load_path=None, data_size=3000, eval_every=1500):
+              log_dir='log/tmp/', load_path=None, data_size=3000, eval_every=1500, val_rate=0.1):
 
         print(" [*] Building Network...")
         start = time.time()
@@ -188,11 +188,19 @@ class AttentiveReader():
         start_time = time.time()
         ACC = []
         LOSS = []
+        train_files, validate_files = fetch_files( data_dir, dataset_name, vocab_size )
+        if data_size:
+            train_files = train_files[:data_size]
+        validate_size = int(min( max(20.0,float(len(train_files))*val_rate), len(validate_files) ))
+        print(" [*] Validate_size %d" %validate_size)
 
         for epoch_idx in xrange(epoch):
             # load data
-            train_iter, tsteps, validate_iter, vsteps = load_dataset(data_dir, dataset_name, \
-                                        vocab_size, self.batch_size, self.max_nsteps, self.max_query_length, size=data_size)
+            train_iter = data_iter( train_files, self.max_nsteps, self.max_query_length, 
+                                            batch_size=self.batch_size, 
+                                            vocab_size=self.vocab_size, 
+                                            shuffle_data=True)
+            tsteps = train_iter.next()
             
             # train
             running_acc = 0
@@ -220,8 +228,15 @@ class AttentiveReader():
                     # validate
                     running_acc = 0
                     running_loss = 0 
-                    _, _, validate_iter, vsteps = load_dataset(data_dir, dataset_name, \
-                                        vocab_size, self.batch_size, self.max_nsteps, self.max_query_length, size=data_size)
+
+                    idxs = np.random.choice(len(validate_files), size=validate_size)
+                    files = [ validate_files[idx] for idx in idxs ] 
+                    validate_iter = data_iter( files, self.max_nsteps, self.max_query_length, 
+                                                    batch_size=self.batch_size, 
+                                                    vocab_size=self.vocab_size, 
+                                                    shuffle_data=True)
+                    vsteps = validate_iter.next()
+
                     for batch_idx, docs, d_end, queries, q_end, y in validate_iter:
                         validate_sum_str, cost, accuracy = sess.run([self.validate_sum, self.loss, self.accuracy ],
                                                   feed_dict={self.document: docs,

@@ -6,7 +6,8 @@ class ML_Attention(object):
     def __init__(self, batch_size, sN, sL, qL, 
                     vocab_size, embed_size, hidden_size, 
                     learning_rate=5e-3,
-                    dropout_rate=1):
+                    dropout_rate=1,
+                    l2_rate=5e-3):
         self.passage = tf.placeholder(tf.int32, [batch_size, sN, sL], name='passage')
         self.p_len   = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
         self.query   = tf.placeholder(tf.int32, [batch_size, qL], name='query')
@@ -52,34 +53,21 @@ class ML_Attention(object):
 
         self.score = atten
         self.loss = tf.nn.softmax_cross_entropy_with_logits( self.score, self.answer, name='loss' )
+        for v in tf.trainable_variables():
+            if v.name.endswith('Matrix:0') or v.name.startswith('W'):
+                self.loss += l2_rate*tf.nn.l2_loss(v, name="%s-l2loss"%v.name[:-2])
 
         prediction = tf.argmax(self.score, 1)
         answer_id  = tf.argmax(self.answer, 1)
         self.correct_prediction = tf.equal(prediction, answer_id)
         self.accuracy = tf.reduce_mean( tf.cast(self.correct_prediction, tf.float16) )
 
-        # self.optim = tf.train.AdamOptimizer(learning_rate)
-        self.optim = tf.train.GradientDescentOptimizer(learning_rate)
+        self.optim = tf.train.AdamOptimizer(learning_rate)
+        # self.optim = tf.train.GradientDescentOptimizer(learning_rate)
         self.gvs = self.optim.compute_gradients(self.loss)
         self.train_op = self.optim.apply_gradients(self.gvs)
 
-        # checkers = []
-        # self.names = [ gv[1].name for gv in self.gvs ]
-        # self.vmeans = []
-        # self.gmeans = []
-        # for g,v in self.gvs:
-        #     # self.mean.append
-        #     self.vmeans.append(tf.reduce_mean(v))
-        #     self.gmeans.append(tf.reduce_mean(g))
-            # self.means += new
-            # if g is not None: checkers.append( tf.check_numerics(g, 'G/%s'%name) )
-        # self.check_op = tf.group(*checkers)
-
         self.check_op = tf.add_check_numerics_ops()
-        checker = [self.check_op]
-        for i, s in enumerate(sentence):
-            checker.append(tf.check_numerics(s, 'bow%d'%i))
-        self.sentence_check = tf.group( *checker )
 
         accu_sum = tf.scalar_summary( 'T_accuracy', self.accuracy )
         loss_sum = tf.scalar_summary( 'T_loss', tf.reduce_mean(self.loss))
@@ -87,6 +75,6 @@ class ML_Attention(object):
 
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy )
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
-        self.train_summary = tf.merge_summary([Vaccu_sum, Vloss_sum])
+        self.validate_summary = tf.merge_summary([Vaccu_sum, Vloss_sum])
     # def step(self, input_feed)
 
