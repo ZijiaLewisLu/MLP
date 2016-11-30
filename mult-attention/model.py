@@ -7,7 +7,8 @@ class ML_Attention(object):
                     vocab_size, embed_size, hidden_size, 
                     learning_rate=5e-3,
                     dropout_rate=1,
-                    l2_rate=5e-3):
+                    l2_rate=5e-3,
+                    optim='Adam'):
         self.passage = tf.placeholder(tf.int32, [batch_size, sN, sL], name='passage')
         self.p_len   = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
         self.query   = tf.placeholder(tf.int32, [batch_size, qL], name='query')
@@ -53,17 +54,22 @@ class ML_Attention(object):
 
         self.score = atten
         self.loss = tf.nn.softmax_cross_entropy_with_logits( self.score, self.answer, name='loss' )
-        for v in tf.trainable_variables():
-            if v.name.endswith('Matrix:0') or v.name.startswith('W'):
-                self.loss += l2_rate*tf.nn.l2_loss(v, name="%s-l2loss"%v.name[:-2])
+        if l2_rate > 0:
+            for v in tf.trainable_variables():
+                if v.name.endswith('Matrix:0') or v.name.startswith('W'):
+                    self.loss += l2_rate*tf.nn.l2_loss(v, name="%s-l2loss"%v.name[:-2])
 
         prediction = tf.argmax(self.score, 1)
         answer_id  = tf.argmax(self.answer, 1)
         self.correct_prediction = tf.equal(prediction, answer_id)
         self.accuracy = tf.reduce_mean( tf.cast(self.correct_prediction, tf.float16) )
 
-        self.optim = tf.train.AdamOptimizer(learning_rate)
-        # self.optim = tf.train.GradientDescentOptimizer(learning_rate)
+        if optim == 'Adam':
+            self.optim = tf.train.AdamOptimizer(learning_rate)
+        elif optim == 'SGD':
+            self.optim = tf.train.GradientDescentOptimizer(learning_rate)
+        else:
+            raise ValueError(optim)
         self.gvs = self.optim.compute_gradients(self.loss)
         self.train_op = self.optim.apply_gradients(self.gvs)
 

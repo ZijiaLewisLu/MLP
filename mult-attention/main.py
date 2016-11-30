@@ -1,5 +1,6 @@
 #! /usr/bin/python
-import os, sys
+import os
+import sys
 import tensorflow as tf
 import time
 import json
@@ -23,11 +24,11 @@ flags.DEFINE_float("learning_rate", 3e-5, "Learning rate")
 # flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 # flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
 # flags.DEFINE_float("dropout", 0.9, "Dropout rate")
-# flags.DEFINE_float("l2_rate", 5e-4, "Dropout rate")
+flags.DEFINE_float("l2_rate", 0, "Dropout rate")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
 flags.DEFINE_string("data_dir", "data/squad", "Data")
-flags.DEFINE_string("load_path", None, "The path to old model. [None]")
-# flags.DEFINE_string("optim", 'RMS', "The optimizer to use [RMS]")
+flags.DEFINE_string("load_path", None, "The path to old model.")
+flags.DEFINE_string("optim", 'SGD', "The optimizer to use")
 FLAGS = flags.FLAGS
 
 # unoften changed parameter
@@ -47,7 +48,9 @@ def main(_):
 
     sess = tf.Session()
     model = ML_Attention( FLAGS.batch_size, sN, sL, qL, FLAGS.vocab_size, FLAGS.embed_size, FLAGS.hidden_size, 
-                            learning_rate=FLAGS.learning_rate)
+                            learning_rate=FLAGS.learning_rate,
+                            l2_rate=FLAGS.l2_rate,
+                            optim=FLAGS.optim)
     print '  Model Built'
 
     sess.run(tf.initialize_all_variables())
@@ -68,8 +71,8 @@ def main(_):
     save_dir = os.path.join(log_dir, 'ckpts')
     if os.path.exists(save_dir):
         print('log_dir exist %s' % log_dir)
-        exit(2)    
-    os.makedirs(save_dir)    
+        exit(2)
+    os.makedirs(save_dir)
     with open(log_dir+'/Flags.js','w') as f:
         json.dump(FLAGS.__flags, f, indent=4)
     print '  Writing log to %s' % log_dir
@@ -149,9 +152,10 @@ def main(_):
           
 
 if __name__ == '__main__':
-    # try:
-        # tf.app.run()
-    # except Exception, e:
-        # print e
-        # import ipdb; ipdb.set_trace()
-    tf.app.run()
+    try:
+        tf.app.run()
+    except Exception, e:
+        import ipdb, traceback
+        etype, value, tb = sys.exc_info()
+        traceback.print_exc()
+        ipdb.post_mortem(tb)
