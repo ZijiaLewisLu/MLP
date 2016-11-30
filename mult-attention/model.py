@@ -82,5 +82,19 @@ class ML_Attention(object):
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy )
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
         self.validate_summary = tf.merge_summary([Vaccu_sum, Vloss_sum])
-    # def step(self, input_feed)
 
+    def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
+        with tf.variable_scope("bilinear_attention"):
+            W = tf.get_variable('W', [2*hidden_size, 2*hidden_size])
+            atten = []
+            for i in range(sN):
+                # print p_rep[i].get_shape()
+                # print W.get_shape()
+                a = tf.matmul(p_rep[i], W, name='pW') # N, 2H
+                a = tf.reduce_sum(a*q_rep, 1, name='Wq') # N
+                atten.append(a)
+            atten = tf.pack(atten, axis=1, name='attention') # N, sN
+        return atten
+
+    def concat_attention(self, hidden_size, sN, p_rep, q_rep):
+        pass

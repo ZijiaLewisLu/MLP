@@ -35,8 +35,23 @@ FLAGS = flags.FLAGS
 sN=10
 sL=50
 qL=15
-split_rate=0.9
 stop_id=2
+val_rate = 0.05
+
+def initialize(sess, saver, load_path=None):
+    if not load_path:
+        sess.run(tf.initialize_all_variables)
+    else:
+        if os.path.isdir(load_path):
+            fname = tf.train.latest_checkpoint(os.path.join(load_path, 'ckpts'))
+            assert fname is not None
+        else:
+            fname = load_path
+        print "  Load from %s" % fname
+        saver.restore(sess, fname)
+        
+
+
 
 def main(_):
     pp.pprint(flags.FLAGS.__flags)
@@ -53,19 +68,18 @@ def main(_):
                             optim=FLAGS.optim)
     print '  Model Built'
 
-    sess.run(tf.initialize_all_variables())
+    saver = tf.train.Saver()
+    initialize(sess, saver, FLAGS.load_path)
     print '  Variable inited'
     
     train_ids_path = os.path.join(FLAGS.data_dir, 'ids_vocab%d_train.txt' % FLAGS.vocab_size)
-    data = _load(train_ids_path)
-    np.random.shuffle(data)
-
+    train_data = _load(train_ids_path)
     if FLAGS.data_size:
-        data = data[:FLAGS.data_size]
-    part = int(np.floor(len(data) * split_rate))
-    train = data[:part]
-    validate = data[part:]
-    print '  Data Loaded, Start to train'
+        train_data = train_data[:FLAGS.data_size]
+    validate_ids_path = os.path.join(FLAGS.data_dir, 'ids_vocab%d_dev.txt' % FLAGS.vocab_size)
+    validate_data = _load(validate_ids_path)
+    validate_size = int(min( max(20.0,float(len(train_data))*val_rate), len(validate_data) ))
+    print '  Data Loaded'
 
     log_dir = "%s/%s"%(FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
     save_dir = os.path.join(log_dir, 'ckpts')
@@ -80,12 +94,11 @@ def main(_):
     counter = 1
     vcounter = 1
     start_time = time.time()
-    saver = tf.train.Saver()
     writer = tf.train.SummaryWriter(log_dir, sess.graph)
 
     for epoch_idx in range(FLAGS.epoch):
-        np.random.shuffle(train)
-        titer = batchIter(FLAGS.batch_size, train, sN, sL, qL, stop_id=stop_id)
+        np.random.shuffle(train_data)
+        titer = batchIter(FLAGS.batch_size, train_data, sN, sL, qL, stop_id=stop_id)
         tstep = titer.next()
         running_acc = 0.0
         running_loss = 0.0 
@@ -122,8 +135,9 @@ def main(_):
             if counter % FLAGS.eval_every == 0:
                 _accuracy = 0.0
                 _loss = 0.0
-                np.random.shuffle(validate)
-                viter = batchIter(FLAGS.batch_size, validate, sN, sL, qL, stop_id=stop_id)
+                idxs = np.random.choice(len(validate_data), size=validate_size)                           
+                D = [ validate_data[idx] for idx in idxs ]
+                viter = batchIter(FLAGS.batch_size, D, sN, sL, qL, stop_id=stop_id)
                 vstep = float(viter.next())
                 for batch_idx, P, p_len, Q, q_len, A in viter:
                     loss, accuracy, sum_str = sess.run( [model.loss, model.accuracy, model.validate_summary],

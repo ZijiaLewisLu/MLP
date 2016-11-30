@@ -11,31 +11,39 @@ _START_VOCAB = ["<PAD>", "<UNK>", "<STOP>"]
 
 def format_data(js):
     data_list = js['data']
-    fours = []
+    formated = []
     for article in data_list:
         for passage in article['paragraphs']:
             context = passage['context'].strip()  # unicode string
             for qa in passage['qas']:
                 q = qa['question']  # unicode string
-                a = qa['answers']   # list of dicts
-                # assert len(a) == 1, a
-                if len(a) > 1:
-                    print 'multiple answer', a
-                    a = a[0:1]
-                fours.append((
+                # a = qa['answers']   # list of dicts
+                answer = [(_['text'].strip(), int(_['answer_start']))
+                          for _ in qa['answers']]
+                answer = set(answer)
+                formated.append((
                     context,
                     q.strip(),
-                    a[0]['text'].strip(),
-                    int(a[0]['answer_start'])))
-    return fours
+                    answer))
+        return formated
 
-def filter_data(fours, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
-    good = []
-    abr = []
-    bad = []
-    mys = []
-    for c, q, a, start in tqdm(fours):
-        into = False
+
+def filter_data(formated, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
+    def _locate(c, a, s, period_loc):
+        if c[s] != a[0]:
+            return None, 1
+        for i in range(len(period_loc) - 1):
+            h = period_loc[i]
+            t = period_loc[i + 1]
+            if h <= s and s < t:
+                if s + len(a) > t:
+                    return i, 2
+                else:
+                    return i, 0
+        return None, 3
+
+    def _one_piece(_data):
+        c, q, a_s = _data
         # get delimiter location
         period_loc = [_.start(2) + 1 for _ in re.finditer(exps, c)]
         period_loc.insert(0, 0)
@@ -43,48 +51,63 @@ def filter_data(fours, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
             period_loc.append(len(c))
 
         # get answer location
-        for i in range(len(period_loc) - 1):
-            h = period_loc[i]
-            t = period_loc[i + 1]
-            if h <= start and start < t:
-                into = True
+        _cate = [[] for _ in range(4)]
+        for a, s in a_s:
+            loc, i = _locate(c, a, s, period_loc)
+            _cate[i].append(loc)
+        for i in range(4):
+            if len(_cate[i]) > 0:
+                _cate[i] = [c, q, a_s, period_loc, _cate[i]]
+        return _cate
 
-                if c[start] != a[0]:
-                    bad.append([c, q, a, start, period_loc, i])
-                elif start + len(a) > t:
-                    abr.append([c, q, a, start, period_loc, i])
-                else:
-                    good.append([c, q, a, start, period_loc, i])
-
-                break
-
-        if not into:
-            mys.append([c, q, a, start, period_loc, None])
+    # =============================
+    catego = [[] for _ in range(4)]  # good, bad, abrevation, mysterious
+    for _ in tqdm(formated):
+        rslt = _one_piece(_)
+        assert len(rslt) == 4, rslt
+        for i in range(4):
+            if len(rslt[i]) > 0:
+                catego[i].append(rslt[i])
 
     print "#good:%d #bad_sample:%d #confusing abbrevation:%d #mysterious:%d #all:%d" \
-        % (len(good), len(bad), len(abr), len(mys), len(fours))
-    return good, bad, abr, mys
+        % (len(catego[0]), len(catego[1]), len(catego[2]), len(catego[3]), len(formated))
+    return catego
 
 
 def token_sample(data, replace=u"['\",\/#$%\^&\*:{}=\-_`~()\[\]\s]+", normalize_digit=True):
-    c, q, a, start, period_loc, asi = data
+    c, q, a_s, period_loc, asi = data
     sentence = []
-    for i in range(len(period_loc) - 1):
-        s = c[period_loc[i]:period_loc[i + 1]].strip('. ').lower()
+    for i in range(len(period_loc)-1):
+        s = c[period_loc[i]:period_loc[i+1]].strip('. ').lower()
         s = re.sub(replace, ' ', s)
         if normalize_digit:
             s = re.sub('\d', '0', s)
         s = s.strip(' ').split(' ')
         sentence.append(s)
-
+    
     q = q.strip(' ?').lower()
     q = re.sub(replace, ' ', q)
     if normalize_digit:
         q = re.sub('\d', '0', q)
     q = q.strip(' ').split(' ')
-
+    
     return [sentence, q, asi]
 
+# @DeprecationWarning
+def token_data(origin_file, save_name, normalize_digit=True):
+    if os.path.exists(save_name):
+        with open(save_name, 'r') as f:
+            formated = json.load(f)
+    else:
+        with open(origin_file, 'r') as f:
+            squad = json.load(f)
+        fours = format_data(squad)
+        good, bad, abr, mys = filter_data(fours)
+        formated = [token_sample(_, normalize_digit=normalize_digit)
+                    for _ in good]
+        with open(save_name, 'w') as f:
+            json.dump(formated, f, indent=4)
+    return formated
 
 def create_vocab(data_triple, cap=None):
     X = []
@@ -109,39 +132,28 @@ def create_vocab(data_triple, cap=None):
     vocab = {k: i for i, k in enumerate(vocab_list)}
     return vocab
 
+
 def data2id(data, vocab, unk="<UNK>"):
     unk_id = vocab[unk]
-    trans = lambda x: vocab.get(x,unk_id)
+    trans = lambda x: vocab.get(x, unk_id)
     ids = []
     for sen, qa, aid in data:
-        sen = [ map(trans, _) for _ in sen ]
+        sen = [map(trans, _) for _ in sen]
         qa = map(trans, qa)
-        ids.append([sen,qa,aid])
+        ids.append([sen, qa, aid])
     return ids
 
-def token_data(origin_file, save_name, normalize_digit=True):
-    if os.path.exists(save_name):
-        with open(save_name, 'r') as f:
-            formated = json.load(f)
-    else:
-        with open(origin_file, 'r') as f:
-            squad = json.load(f)
-        fours = format_data(squad)
-        good, bad, abr, mys = filter_data(fours)
-        formated = [ token_sample(_, normalize_digit=normalize_digit) for _ in good ]
-        with open(save_name, 'w') as f:
-            json.dump(formated, f, indent=4)
-    return formated
-
 def process_data(data_path='../data/squad', save_path='../data/squad/', cap=None, normalize_digit=True):
-    
-    train_js = glob( os.path.join(data_path, 'train-v*.json') )[0]
-    dev_js = glob( os.path.join(data_path, 'dev-v*.json') )[0]
+
+    train_js = glob(os.path.join(data_path, 'train-v*.json'))[0]
+    dev_js = glob(os.path.join(data_path, 'dev-v*.json'))[0]
 
     # token data
     formated_save_path = os.path.join(save_path, 'formated')
-    train_token = token_data(train_js, formated_save_path+'_train.js', normalize_digit=normalize_digit)
-    dev_token = token_data(dev_js, formated_save_path+'_dev.js', normalize_digit=normalize_digit)
+    train_token = token_data(
+        train_js, formated_save_path + '_train.js', normalize_digit=normalize_digit)
+    dev_token = token_data(dev_js, formated_save_path +
+                           '_dev.js', normalize_digit=normalize_digit)
 
     # load vocab
     if cap is None:
@@ -162,19 +174,9 @@ def process_data(data_path='../data/squad', save_path='../data/squad/', cap=None
     ids_path = os.path.join(save_path, 'ids_vocab%d' % len(vocab))
     train_ids = data2id(train_token, vocab)
     dev_ids = data2id(dev_token, vocab)
+    _save(ids_path + '_train.txt', train_ids)
+    _save(ids_path + '_dev.txt', dev_ids)
 
-    def save(_fname, _data):
-        with open(_fname, 'w') as f:
-            for seq, qur, aid in _data:
-                N = len(seq)
-                f.write( "%d\n"%N )
-                for s in seq:
-                    f.write( " ".join(map(str,s))+'\n' )
-                f.write( " ".join(map(str,qur))+'\n' )
-                f.write( "%d\n\n"%aid )
-
-    save( ids_path+'_train.txt', train_ids )
-    save( ids_path+'_dev.txt',   dev_ids )
 
 def _transform(d, l, end, pad=0):
     if len(d) >= l:
@@ -217,13 +219,23 @@ def batchIter(batch_size, data, sN, sL, qL, stop_id=2):
         for i, sample in enumerate(batch):
             sens, q, aid = sample
             for j, s in enumerate(sens[:sN]):
-                P[i,j], p_len[i,j] = _transform(s, sL, stop_id)
+                P[i, j], p_len[i, j] = _transform(s, sL, stop_id)
             Q[i], q_len[i] = _transform(q, qL, stop_id)
-            if aid < sN:
-                A[i][aid] = 1
+            for a in aid:
+                if a < sN: A[i][a] = 1
 
         yield idx, P, p_len, Q, q_len, A
 
+
+def _save(_fname, _data):
+    with open(_fname, 'w') as f:
+        for seq, qur, aid in _data:
+            N = len(seq)
+            f.write("%d\n" % N)
+            for s in seq:
+                f.write(" ".join(map(str, s)) + '\n')
+            f.write(" ".join(map(str, qur)) + '\n')
+            f.write( " ".join(map(str,aid))+'\n\n')
 
 def _load(_fname):
     D = []
@@ -238,18 +250,21 @@ def _load(_fname):
                 sen.append(new)
             que = f.readline().strip('\n').split()
             que = map(int, que)
-            aid = int(f.readline())
-            D.append( [sen, que, aid] )
+            aid = f.readline().strip('\n').split()
+            aid = map(int, aid)
+            D.append([sen, que, aid])
             f.readline()
-            line = f.readline() 
+            line = f.readline()
     return D
+
 
 def load_data(data_dir='/home/zijia/nlp/proj/mult-attention/data/squad/', batch_size=64, vocab_size=50000,
               sN=10, sL=50, qL=15,
               shuffle=True, split_rate=0.9,
               stop_id=2, data_size=None):
     # (TODO) use dev data
-    train_ids_path = os.path.join(data_dir, 'ids_vocab%d_train.txt' % vocab_size)
+    train_ids_path = os.path.join(
+        data_dir, 'ids_vocab%d_train.txt' % vocab_size)
     data = _load(train_ids_path)
 
     if data_size:
