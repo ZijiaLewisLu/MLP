@@ -24,7 +24,7 @@ flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
 flags.DEFINE_string("load_path", None, "The path to old model. [None]")
 flags.DEFINE_string("optim", 'RMS', "The optimizer to use [RMS]")
-flags.DEFINE_string("activation", 'none', "The the last activation layer to use before Softmax loss")
+flags.DEFINE_string("activation", 'tanh', "The the last activation layer to use before Softmax loss")
 FLAGS = flags.FLAGS
 
 def main(_):

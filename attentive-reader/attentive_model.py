@@ -16,7 +16,7 @@ class AttentiveReader():
                  max_query_length=20,
                  dropout_rate=0.9,
                  use_optimizer = 'RMS',
-                 activation='none'
+                 activation='tanh'
                  ):
 
         self.size = size
@@ -95,8 +95,8 @@ class AttentiveReader():
         r = tf.reduce_sum(s * d, 1, name='r')  # N,2E
 
         # predict
-        W_rg = tf.get_variable("W_rg", [2 * self.size, self.vocab_size])
-        W_ug = tf.get_variable("W_ug", [2 * self.size, self.vocab_size])
+        W_rg = tf.get_variable("W_rg", [2 * self.size, self.size])
+        W_ug = tf.get_variable("W_ug", [2 * self.size, self.size])
         mid = tf.matmul(r, W_rg, name='r_x_W') + tf.matmul(u, W_ug, name='u_x_W')
         if self.activation == 'relu':
             g = tf.nn.relu(mid, name='relu_g')
@@ -110,15 +110,18 @@ class AttentiveReader():
         beact_sum = tf.scalar_summary('before activitation', tf.reduce_mean(mid))
         afact_sum = tf.scalar_summary('before activitation_after', tf.reduce_mean(g))
 
+        W_g = tf.get_variable('W_g', [self.size, self.vocab_size])
+        g = tf.matmul(g, W_g, name='g_x_W')
+
         self.loss = tf.nn.softmax_cross_entropy_with_logits(g, self.y, name='loss')
         for v in tf.trainable_variables():
             if v.name.endswith('Matrix:0') or v.name.startswith('W'):
                 self.loss += self.l2_rate*tf.nn.l2_loss(v, name="%s-l2loss"%v.name[:-2])
-        loss_sum  = tf.scalar_summary("loss", tf.reduce_mean(self.loss))
+        loss_sum  = tf.scalar_summary("T_loss", tf.reduce_mean(self.loss))
 
         correct_prediction = tf.equal(tf.argmax(self.y, 1), tf.argmax(g, 1))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"), name='accuracy')
-        acc_sum   = tf.scalar_summary("accuracy", self.accuracy)
+        acc_sum   = tf.scalar_summary("T_accuracy", self.accuracy)
 
         # optimize
         if self.use_optimizer == 'SGD':
