@@ -146,7 +146,7 @@ def main(_):
                                                 model.p_len: p_len,
                                                 model.query: Q,
                                                 model.q_len: q_len,
-                                                model.answer: A
+                                                # model.answer: A
                                             } )
                     _accuracy += accuracy
                     _loss += np.mean(loss)
