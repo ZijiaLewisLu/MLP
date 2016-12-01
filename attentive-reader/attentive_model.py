@@ -92,11 +92,12 @@ class AttentiveReader():
         # m = tf.tanh(D+U) # N, T
         U = tf.matmul(u, W_um) # N,H
         for d in d_t:
-            m_cur = tf.tanh(tf.matmul(d, W_ym) + U)
-            m_t.append(m_cur) # N,H 
-        m = tf.pack(m_t, 1)  # N,T,H
+            # m_cur = tf.tanh(tf.matmul(d, W_ym) + U)
+            m_t.append( tf.matmul(d, W_ym)+U ) # N,H 
+        m = tf.pack(m_t, 1) # N,T,H
+        m = tf.tanh(m)
         # print m.get_shape()
-        ms = tf.reduce_sum(m*W_ms,2, keep_dims=True, name='ms') # N,T,1
+        ms = tf.reduce_sum(m*W_ms, 2, keep_dims=True, name='ms') # N,T,1
         s = tf.nn.softmax(ms, 1) # N,T,1
         # s = tf.expand_dims(tf.nn.softmax(ms), -1)  # N,T,1
         d = tf.pack(d_t, axis=1) # N,T,2E
@@ -105,6 +106,7 @@ class AttentiveReader():
         # predict
         W_rg = tf.get_variable("W_rg", [2 * self.size, self.size])
         W_ug = tf.get_variable("W_ug", [2 * self.size, self.size])
+        W_g = tf.get_variable('W_g', [self.size, self.vocab_size])
         mid = tf.matmul(r, W_rg, name='r_x_W') + tf.matmul(u, W_ug, name='u_x_W')
         if self.activation == 'relu':
             g = tf.nn.relu(mid, name='relu_g')
@@ -114,17 +116,19 @@ class AttentiveReader():
             g = mid
         else:
             raise ValueError(self.activation)
+        if self.dropout<1:
+            g = tf.nn.dropout(g, keep_prob=self.dropout)
+        g = tf.matmul(g, W_g, name='g_x_W')
 
         beact_sum = tf.scalar_summary('before activitation', tf.reduce_mean(mid))
         afact_sum = tf.scalar_summary('before activitation_after', tf.reduce_mean(g))
 
-        W_g = tf.get_variable('W_g', [self.size, self.vocab_size])
-        g = tf.matmul(g, W_g, name='g_x_W')
 
         self.loss = tf.nn.softmax_cross_entropy_with_logits(g, self.y, name='loss')
-        for v in tf.trainable_variables():
-            if v.name.endswith('Matrix:0') or v.name.startswith('W'):
-                self.loss += self.l2_rate*tf.nn.l2_loss(v, name="%s-l2loss"%v.name[:-2])
+        if self.l2_rate > 0:
+            for v in tf.trainable_variables():
+                if v.name.endswith('Matrix:0') or v.name.startswith('W'):
+                    self.loss += self.l2_rate*tf.nn.l2_loss(v, name="%s-l2loss"%v.name[:-2])
         loss_sum  = tf.scalar_summary("T_loss", tf.reduce_mean(self.loss))
 
         correct_prediction = tf.equal(tf.argmax(self.y, 1), tf.argmax(g, 1))
