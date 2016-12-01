@@ -16,8 +16,8 @@ flags.DEFINE_integer("vocab_size", 50000, "The size of vocabulary")
 flags.DEFINE_integer("batch_size", 32, "The size of batch images")
 flags.DEFINE_integer("gpu", 3, "the number of gpus to use")
 flags.DEFINE_integer("data_size", None, "Number of files to train on")
-flags.DEFINE_integer("hidden_size", 128, "Hidden dimension for rnn and fully connected layer")
-flags.DEFINE_integer("embed_size", 128, "Embed size")
+flags.DEFINE_integer("hidden_size", 256, "Hidden dimension for rnn and fully connected layer")
+flags.DEFINE_integer("embed_size", 256, "Embed size")
 flags.DEFINE_float("eval_every", 80.0, "Eval every step")
 flags.DEFINE_float("save_every", 500.0, "Eval every step")
 flags.DEFINE_float("learning_rate", 3e-5, "Learning rate")
@@ -50,6 +50,17 @@ def initialize(sess, saver, load_path=None):
         print "  Load from %s" % fname
         saver.restore(sess, fname)
 
+def prepare_data(path, data_size=None, size=3185, val_rate=0.05):
+    train_data = _load(path)
+    validate_data = train_data[-size:]
+    train_data = train_data[:-size]
+
+    if data_size:
+        train_data=train_data[:data_size]
+    vsize = max( 20, len(train_data)*val_rate)
+    vsize = int( min(vsize, len(validate_data)) )
+    return train_data, validate_data, vsize
+
 def main(_):
     pp.pprint(flags.FLAGS.__flags)
 
@@ -69,16 +80,8 @@ def main(_):
     initialize(sess, saver, FLAGS.load_path)
     print '  Variable inited'
     
-    train_ids_path = os.path.join(FLAGS.data_dir, 'ids_vocab%d_train.txt' % FLAGS.vocab_size)
-    train_data = _load(train_ids_path)
-    if FLAGS.data_size:
-        train_data = train_data[:FLAGS.data_size]
-    validate_ids_path = os.path.join(FLAGS.data_dir, 'ids_vocab%d_dev.txt' % FLAGS.vocab_size)
-    validate_data = _load(validate_ids_path)
-    vsize = max(20, len(train_data)*val_rate)
-    vsize = int( min(vsize, len(validate_data)) )
-    # train_data = train_data[validate_size:]
-    # validate_data = train_data[:validate_size]
+    ids_path = os.path.join(FLAGS.data_dir, 'ids_vocab%d_train.txt' % FLAGS.vocab_size)
+    train_data, validate_data, vsize = prepare_data(ids_path, data_size=FLAGS.data_size, val_rate=val_rate)
     print '  Data Loaded'
 
     log_dir = "%s/%s"%(FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
@@ -140,9 +143,7 @@ def main(_):
                 viter = batchIter(FLAGS.batch_size, D, sN, sL, qL, stop_id=stop_id)
                 vstep = float(viter.next())
                 for batch_idx, P, p_len, Q, q_len, A in viter:
-                    mean = A.mean()
-                    A = A/mean
-                    loss, accuracy, sum_str = sess.run( [model.loss, model.accuracy, model.validate_summary],
+                    loss, accuracy, sum_str = sess.run( [model.Vloss, model.Vaccuracy, model.validate_summary],
                                             feed_dict={
                                                 model.passage: P,
                                                 model.p_len: p_len,
@@ -166,10 +167,11 @@ def main(_):
             counter += 1
          
 if __name__ == '__main__':
-    try:
-        tf.app.run()
-    except Exception, e:
-        import ipdb, traceback
-        etype, value, tb = sys.exc_info()
-        traceback.print_exc()
-        ipdb.post_mortem(tb)
+    tf.app.run()
+    # try:
+    #     tf.app.run()
+    # except Exception, e:
+    #     import ipdb, traceback
+    #     etype, value, tb = sys.exc_info()
+    #     traceback.print_exc()
+    #     ipdb.post_mortem(tb)

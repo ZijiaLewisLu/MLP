@@ -18,6 +18,7 @@ class ML_Attention(object):
         self.emb = tf.get_variable("emb", [vocab_size, embed_size])
         embed_p = tf.nn.embedding_lookup(self.emb, self.passage, name='embed_p') # N,sN,sL,E
         embed_q = tf.nn.embedding_lookup(self.emb, self.query,   name='embed_q') # N,qL,E
+        self.embed_sum = tf.histogram_summary("embed", self.emb)
 
         bow_p = tf.reduce_sum(embed_p, 2) # N, sN, E
         sentence = tf.unpack(bow_p, axis=1) # [ N,E ] * sN 
@@ -41,16 +42,7 @@ class ML_Attention(object):
             ffinal, _ = tf.split(1,2,q_rep[-1])
             q_rep = tf.concat(1, [ffinal, bfinal])
 
-        with tf.variable_scope("atten_pointer"):
-            W = tf.get_variable('W', [2*hidden_size, 2*hidden_size])
-            atten = []
-            for i in range(sN):
-                # print p_rep[i].get_shape()
-                # print W.get_shape()
-                a = tf.matmul(p_rep[i], W, name='pW') # N, 2H
-                a = tf.reduce_sum(a*q_rep, 1, name='Wq') # N
-                atten.append(a)
-            atten = tf.pack(atten, axis=1, name='attention') # N, sN
+        atten = self.concat_attention(hidden_size, sN, q_rep, p_rep)
 
         self.score = atten
         self.loss = tf.nn.softmax_cross_entropy_with_logits( self.score, self.answer, name='loss' )
@@ -72,24 +64,38 @@ class ML_Attention(object):
             raise ValueError(optim)
         self.gvs = self.optim.compute_gradients(self.loss)
         self.train_op = self.optim.apply_gradients(self.gvs)
+        accu_sum = tf.scalar_summary( 'T_accuracy', self.accuracy )
+        loss_sum = tf.scalar_summary( 'T_loss', tf.reduce_mean(self.loss))
+        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum])
 
         self.check_op = tf.add_check_numerics_ops()
 
-        accu_sum = tf.scalar_summary( 'T_accuracy', self.accuracy )
-        loss_sum = tf.scalar_summary( 'T_loss', tf.reduce_mean(self.loss))
-        self.train_summary = tf.merge_summary([accu_sum, loss_sum])
+        # Validation Op ====================        
+        # A_mean = tf.reduce_mean(self.answer)
+        # answer = self.answer/A_mean
+        # self.Vloss = tf.nn.softmax_cross_entropy_with_logits( self.score, answer, name='Vloss')
+        # Vloss_sum = tf.scalar_summary('V_loss', t/f.reduce_mean(self.Vloss))
 
-        Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy )
-        Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
+        # biggest = tf.reduce_max(self.score, 1, keep_dims=True) # N, 1    
+        # Vpredict = tf.cast(tf.equal(self.score, biggest), tf.int64)
+        # self.Vaccuracy = tf.reduce_mean( Vpredict*self.answer )
+        # Vaccu_sum = tf.scalar_summary('V_accuracy', self.Vaccuracy )
+
+        Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
+        Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_sum(self.loss))
         self.validate_summary = tf.merge_summary([Vaccu_sum, Vloss_sum])
+
+        # store para =======================
+        self.p_rep = p_rep
+        self.q_rep = q_rep
+        self.embed_p = embed_p
+        self.embed_q = embed_q
 
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
         with tf.variable_scope("bilinear_attention"):
             W = tf.get_variable('W', [2*hidden_size, 2*hidden_size])
             atten = []
             for i in range(sN):
-                # print p_rep[i].get_shape()
-                # print W.get_shape()
                 a = tf.matmul(p_rep[i], W, name='pW') # N, 2H
                 a = tf.reduce_sum(a*q_rep, 1, name='Wq') # N
                 atten.append(a)
@@ -102,7 +108,7 @@ class ML_Attention(object):
             Wq = tf.get_variable('Wq', [2*hidden_size, 2*hidden_size])
             Ws = tf.get_variable('Ws', [2*hidden_size])
             atten = []
-            Q = tf.matmul(q_rep*Wq, name='q_Wq')
+            Q = tf.matmul(q_rep, Wq, name='q_Wq')
             for i in range(sN):
                 a = tf.tanh( tf.matmul(p_rep[i],Wp)+Q ) # N, 2H
                 atten.append(a)
