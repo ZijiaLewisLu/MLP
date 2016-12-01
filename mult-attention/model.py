@@ -97,4 +97,18 @@ class ML_Attention(object):
         return atten
 
     def concat_attention(self, hidden_size, sN, p_rep, q_rep):
-        pass
+        with tf.variable_scope("concat_attention"):
+            Wp = tf.get_variable('Wp', [2*hidden_size, 2*hidden_size])
+            Wq = tf.get_variable('Wq', [2*hidden_size, 2*hidden_size])
+            Ws = tf.get_variable('Ws', [2*hidden_size])
+            atten = []
+            Q = tf.matmul(q_rep*Wq, name='q_Wq')
+            for i in range(sN):
+                a = tf.tanh( tf.matmul(p_rep[i],Wp)+Q ) # N, 2H
+                atten.append(a)
+            atten = tf.pack(atten, axis=1) # N, sN, 2H
+            atten = tf.reduce_sum( atten*Ws, 2, keep_dims=True ) # N, sN, 1
+            # P = tf.pack(p_rep, 1) # N, sN, 2H
+            # context = tf.reduce_sum( P*atten, 1 )
+        return atten
+

@@ -24,7 +24,7 @@ flags.DEFINE_float("learning_rate", 3e-5, "Learning rate")
 # flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 # flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
 # flags.DEFINE_float("dropout", 0.9, "Dropout rate")
-flags.DEFINE_float("l2_rate", 0, "Dropout rate")
+flags.DEFINE_float("l2_rate", 0.0, "Dropout rate")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
 flags.DEFINE_string("data_dir", "data/squad", "Data")
 flags.DEFINE_string("load_path", None, "The path to old model.")
@@ -40,7 +40,7 @@ val_rate = 0.05
 
 def initialize(sess, saver, load_path=None):
     if not load_path:
-        sess.run(tf.initialize_all_variables)
+        sess.run(tf.initialize_all_variables())
     else:
         if os.path.isdir(load_path):
             fname = tf.train.latest_checkpoint(os.path.join(load_path, 'ckpts'))
@@ -49,9 +49,6 @@ def initialize(sess, saver, load_path=None):
             fname = load_path
         print "  Load from %s" % fname
         saver.restore(sess, fname)
-        
-
-
 
 def main(_):
     pp.pprint(flags.FLAGS.__flags)
@@ -78,7 +75,10 @@ def main(_):
         train_data = train_data[:FLAGS.data_size]
     validate_ids_path = os.path.join(FLAGS.data_dir, 'ids_vocab%d_dev.txt' % FLAGS.vocab_size)
     validate_data = _load(validate_ids_path)
-    validate_size = int(min( max(20.0,float(len(train_data))*val_rate), len(validate_data) ))
+    vsize = max(20, len(train_data)*val_rate)
+    vsize = int( min(vsize, len(validate_data)) )
+    # train_data = train_data[validate_size:]
+    # validate_data = train_data[:validate_size]
     print '  Data Loaded'
 
     log_dir = "%s/%s"%(FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
@@ -135,18 +135,20 @@ def main(_):
             if counter % FLAGS.eval_every == 0:
                 _accuracy = 0.0
                 _loss = 0.0
-                idxs = np.random.choice(len(validate_data), size=validate_size)                           
+                idxs = np.random.choice(len(validate_data), size=vsize)
                 D = [ validate_data[idx] for idx in idxs ]
                 viter = batchIter(FLAGS.batch_size, D, sN, sL, qL, stop_id=stop_id)
                 vstep = float(viter.next())
                 for batch_idx, P, p_len, Q, q_len, A in viter:
+                    mean = A.mean()
+                    A = A/mean
                     loss, accuracy, sum_str = sess.run( [model.loss, model.accuracy, model.validate_summary],
                                             feed_dict={
                                                 model.passage: P,
                                                 model.p_len: p_len,
                                                 model.query: Q,
                                                 model.q_len: q_len,
-                                                # model.answer: A
+                                                model.answer: A
                                             } )
                     _accuracy += accuracy
                     _loss += np.mean(loss)
@@ -162,9 +164,7 @@ def main(_):
                 saver.save(sess, fname, global_step=counter)
 
             counter += 1
-
-          
-
+         
 if __name__ == '__main__':
     try:
         tf.app.run()
