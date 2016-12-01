@@ -8,7 +8,8 @@ class ML_Attention(object):
                     learning_rate=5e-3,
                     dropout_rate=1,
                     l2_rate=5e-3,
-                    optim='Adam'):
+                    optim='Adam',
+                    attention='bilinear'):
         self.passage = tf.placeholder(tf.int32, [batch_size, sN, sL], name='passage')
         self.p_len   = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
         self.query   = tf.placeholder(tf.int32, [batch_size, qL], name='query')
@@ -42,7 +43,12 @@ class ML_Attention(object):
             ffinal, _ = tf.split(1,2,q_rep[-1])
             q_rep = tf.concat(1, [ffinal, bfinal])
 
-        atten = self.concat_attention(hidden_size, sN, q_rep, p_rep)
+        if attention == 'bilinear':
+            atten = self.bilinear_attention(hidden_size, sN, p_rep, q_rep)
+        elif attention == 'concat':
+            atten = self.concat_attention(hidden_size, sN, p_rep, q_rep)
+        else:
+            raise ValueError(attention)
 
         self.score = atten
         self.loss = tf.nn.softmax_cross_entropy_with_logits( self.score, self.answer, name='loss' )
@@ -66,7 +72,14 @@ class ML_Attention(object):
         self.train_op = self.optim.apply_gradients(self.gvs)
         accu_sum = tf.scalar_summary( 'T_accuracy', self.accuracy )
         loss_sum = tf.scalar_summary( 'T_loss', tf.reduce_mean(self.loss))
-        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum])
+
+        # variance
+        # pmean, pvar = tf.nn.moments(prediction, [0])
+        # amean, avar = tf.nn.moments(answer_id, [0])
+        pv_sum = tf.histogram_summary( 'Var_prediction', prediction)
+        av_sum = tf.histogram_summary( 'Var_answer', answer_id)
+
+        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum, pv_sum, av_sum])
 
         self.check_op = tf.add_check_numerics_ops()
 
@@ -90,6 +103,7 @@ class ML_Attention(object):
         self.q_rep = q_rep
         self.embed_p = embed_p
         self.embed_q = embed_q
+        self.prediction = prediction
 
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
         with tf.variable_scope("bilinear_attention"):
@@ -113,7 +127,7 @@ class ML_Attention(object):
                 a = tf.tanh( tf.matmul(p_rep[i],Wp)+Q ) # N, 2H
                 atten.append(a)
             atten = tf.pack(atten, axis=1) # N, sN, 2H
-            atten = tf.reduce_sum( atten*Ws, 2, keep_dims=True ) # N, sN, 1
+            atten = tf.reduce_sum(atten*Ws, 2, name='attention') # N, sN, 1
             # P = tf.pack(p_rep, 1) # N, sN, 2H
             # context = tf.reduce_sum( P*atten, 1 )
         return atten

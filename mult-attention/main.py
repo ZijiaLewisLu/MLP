@@ -29,6 +29,7 @@ flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
 flags.DEFINE_string("data_dir", "data/squad", "Data")
 flags.DEFINE_string("load_path", None, "The path to old model.")
 flags.DEFINE_string("optim", 'SGD', "The optimizer to use")
+flags.DEFINE_string("atten", 'bilinear', "Attention Method")
 FLAGS = flags.FLAGS
 
 # unoften changed parameter
@@ -73,10 +74,12 @@ def main(_):
     model = ML_Attention( FLAGS.batch_size, sN, sL, qL, FLAGS.vocab_size, FLAGS.embed_size, FLAGS.hidden_size, 
                             learning_rate=FLAGS.learning_rate,
                             l2_rate=FLAGS.l2_rate,
-                            optim=FLAGS.optim)
+                            optim=FLAGS.optim,
+                            attention=FLAGS.atten)
+
     print '  Model Built'
 
-    saver = tf.train.Saver()
+    saver = tf.train.Saver(max_to_keep=15)
     initialize(sess, saver, FLAGS.load_path)
     print '  Variable inited'
     
@@ -143,7 +146,7 @@ def main(_):
                 viter = batchIter(FLAGS.batch_size, D, sN, sL, qL, stop_id=stop_id)
                 vstep = float(viter.next())
                 for batch_idx, P, p_len, Q, q_len, A in viter:
-                    loss, accuracy, sum_str = sess.run( [model.Vloss, model.Vaccuracy, model.validate_summary],
+                    loss, accuracy, sum_str = sess.run( [model.loss, model.accuracy, model.validate_summary],
                                             feed_dict={
                                                 model.passage: P,
                                                 model.p_len: p_len,
