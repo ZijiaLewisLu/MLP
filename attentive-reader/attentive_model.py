@@ -78,21 +78,29 @@ class AttentiveReader():
                 sequence_length=self.q_end, dtype=tf.float32)
             q_f = tf.unpack(q_t[0], axis=1)
             q_b = tf.unpack(q_t[-1], axis=1)
-            u = tf.concat(1, [q_f[-1], q_b[0]], name='u')
+            u = tf.concat(1, [q_f[-1], q_b[0]], name='u') # N, Hidden*2
             if self.dropout < 1:
                 u = tf.nn.dropout(u, keep_prob=self.dropout)
        
         # attention
-        W_ym = tf.get_variable('W_ym', [2 * self.size, 1])
-        W_um = tf.get_variable('W_um', [2 * self.size, 1])
+        W_ym = tf.get_variable('W_ym', [2 * self.size, self.size])
+        W_um = tf.get_variable('W_um', [2 * self.size, self.size])
+        W_ms = tf.get_variable('W_ms', [self.size])
         m_t = []
+        # D = tf.reduce_sum(d*W_ym, 2, name='dW') # N, T
+        # U = tf.reduce_sum(d*W_um, 1, name='uW') # N
+        # m = tf.tanh(D+U) # N, T
+        U = tf.matmul(u, W_um) # N,H
         for d in d_t:
-            m_cur = tf.tanh(tf.matmul(d, W_ym) + tf.matmul(u, W_um))
-            m_t.append(m_cur)
-        m = tf.concat(1, m_t)  # N,T
-        s = tf.expand_dims(tf.nn.softmax(m), -1)  # N,T,1
-        d = tf.pack(d_t, axis=1)  # N,T,2E
-        r = tf.reduce_sum(s * d, 1, name='r')  # N,2E
+            m_cur = tf.tanh(tf.matmul(d, W_ym) + U)
+            m_t.append(m_cur) # N,H 
+        m = tf.pack(m_t, 1)  # N,T,H
+        # print m.get_shape()
+        ms = tf.reduce_sum(m*W_ms,2, keep_dims=True, name='ms') # N,T,1
+        s = tf.nn.softmax(ms, 1) # N,T,1
+        # s = tf.expand_dims(tf.nn.softmax(ms), -1)  # N,T,1
+        d = tf.pack(d_t, axis=1) # N,T,2E
+        r = tf.reduce_sum(s*d, 1, name='r')  # N, 2E
 
         # predict
         W_rg = tf.get_variable("W_rg", [2 * self.size, self.size])
