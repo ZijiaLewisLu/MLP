@@ -2,6 +2,9 @@ import numpy as np
 # import tensorflow as tf
 from main import prepare_data
 from mdu import batchIter
+import os
+from glob import glob
+import matplotlib.pyplot as plt
 
 batch_size = 32
 sN=10
@@ -97,3 +100,37 @@ def concat_attention(p_rep, q_rep, Wp, Wq, Ws):
 
 def mock_attention(sess):
     pass
+
+def parse_track_log(log_dir):
+    trackfile = os.path.join(log_dir, 'tracking.log')
+    # track_dir = os.path.join(log_dir, 'track')
+    with open(trackfile, 'r') as f:
+        content = f.readlines()
+
+    for i, c in enumerate(content):
+        time, info = c.strip('\n ').split(' INFO ')
+        content[i] = [time, info]
+
+    return content
+
+def load_at_mark(mark, track_dir):
+    # train
+    import numpy as np
+    def _one(name):
+        data = []
+        files = glob( os.path.join(track_dir, name) )
+        files = sorted(files)
+        for f in files:
+            data.append(np.load(f))
+        return data
+
+    suffics = ['Tacc*', 'Tloss*', 'Vacc*', 'Vloss*']
+    suffics = [ '%s_%s'%(mark, _) for _ in suffics  ]
+    D = [ _one(_) for _ in suffics ]
+    return D
+
+def visualize_attention(alignment):
+    plt.imshow(alignment, interpolation='none')
+    plt.grid()
+    plt.colorbar(orientation='vertical')
+    plt.show()
