@@ -110,10 +110,12 @@ def main(_):
 
     if FLAGS.glove:
         fname = os.path.join(glove_dir, 'glove.6B.%dd.txt' % FLAGS.embed_size)
-        vocab_path = os.path.join( FLAGS.data_dir, "vocab_%d.js" % FLAGS.vocab_size )
+        vocab_path = os.path.join(
+            FLAGS.data_dir, "vocab_%d.js" % FLAGS.vocab_size)
         with open(vocab_path, 'r') as f:
             vocab = json.load(f)
-        embedding = restruct_glove_embedding(fname, vocab, dim=FLAGS.embed_size)
+        embedding = restruct_glove_embedding(
+            fname, vocab, dim=FLAGS.embed_size)
         sess.run(model.emb.assign(embedding))
         print '  Load Embedding Matrix from %s' % fname
 
@@ -142,7 +144,6 @@ def main(_):
         track_dir = os.path.join(log_dir, 'track')
         os.makedirs(track_dir)
 
-
     counter = 1
     vcounter = 1
     start_time = time.time()
@@ -155,7 +156,7 @@ def main(_):
     for epoch_idx in range(FLAGS.epoch):
         np.random.shuffle(train_data)
         titer = batchIter(FLAGS.batch_size, train_data,
-                          sN, sL, qL, stop_id=stop_id)
+                          sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
         tstep = titer.next()
 
         for batch_idx, P, p_len, Q, q_len, A in titer:
@@ -215,7 +216,7 @@ def main(_):
                 idxs = np.random.choice(len(validate_data), size=vsize)
                 D = [validate_data[idx] for idx in idxs]
                 viter = batchIter(FLAGS.batch_size, D, sN,
-                                  sL, qL, stop_id=stop_id)
+                                  sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
                 vstep = float(viter.next())
                 for batch_idx, P, p_len, Q, q_len, A in viter:
                     loss, accuracy, sum_str = sess.run(

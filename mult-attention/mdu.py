@@ -240,18 +240,20 @@ def tokens2id(data, vocab, unk="<unk>"):
 #     _save(ids_path + '_dev.txt', dev_ids)
 
 
-def _transform(d, l, end, pad=0):
+def _transform(d, l, end, pad=0, add_end=True):
     if len(d) >= l:
-        d[l - 1] = end
+        if add_end:
+            d[l - 1] = end
         return d[:l], l
     else:
-        d.append(end)
+        if add_end:
+            d.append(end)
         l_ = len(d)
         d = d + [pad] * (l - l_)
         return d, l_
 
 
-def batchIter(batch_size, data, sN, sL, qL, stop_id=2):
+def batchIter(batch_size, data, sN, sL, qL, stop_id=2, add_stop=True):
     N = len(data)
     steps = np.ceil(N / float(batch_size))
     steps = int(steps)
@@ -281,8 +283,8 @@ def batchIter(batch_size, data, sN, sL, qL, stop_id=2):
         for i, sample in enumerate(batch):
             sens, q, aid = sample
             for j, s in enumerate(sens[:sN]):
-                P[i, j], p_len[i, j] = _transform(s, sL, stop_id)
-            Q[i], q_len[i] = _transform(q, qL, stop_id)
+                P[i, j], p_len[i, j] = _transform(s, sL, stop_id, add_end=add_stop)
+            Q[i], q_len[i] = _transform(q, qL, stop_id, add_end=add_stop)
             for a in aid:
                 if a < sN:
                     A[i][a] = 1
@@ -322,31 +324,31 @@ def _load(_fname):
     return D
 
 
-def load_data(data_dir='/home/zijia/nlp/proj/mult-attention/data/squad/', batch_size=64, vocab_size=50000,
-              sN=10, sL=50, qL=15,
-              shuffle=True, split_rate=0.9,
-              stop_id=2, data_size=None):
-    # (TODO) use dev data
-    train_ids_path = os.path.join(
-        data_dir, 'ids_vocab%d_train.txt' % vocab_size)
-    data = _load(train_ids_path)
+# def load_data(data_dir='/home/zijia/nlp/proj/mult-attention/data/squad/', batch_size=64, vocab_size=50000,
+#               sN=10, sL=50, qL=15,
+#               shuffle=True, split_rate=0.9,
+#               stop_id=2, data_size=None):
+#     # (TODO) use dev data
+#     train_ids_path = os.path.join(
+#         data_dir, 'ids_vocab%d_train.txt' % vocab_size)
+#     data = _load(train_ids_path)
 
-    if data_size:
-        data = data[:data_size]
+#     if data_size:
+#         data = data[:data_size]
 
-    if shuffle:
-        random.shuffle(data)
-    part = int(np.floor(len(data) * split_rate))
-    train = data[:part]
-    validate = data[part:]
+#     if shuffle:
+#         random.shuffle(data)
+#     part = int(np.floor(len(data) * split_rate))
+#     train = data[:part]
+#     validate = data[part:]
 
-    titer = batchIter(batch_size, train, sN, sL, qL, stop_id=stop_id)
-    viter = batchIter(batch_size, validate, sN, sL, qL, stop_id=stop_id)
+#     titer = batchIter(batch_size, train, sN, sL, qL, stop_id=stop_id)
+#     viter = batchIter(batch_size, validate, sN, sL, qL, stop_id=stop_id)
 
-    tstep = titer.next()
-    vstep = viter.next()
+#     tstep = titer.next()
+#     vstep = viter.next()
 
-    return titer, tstep, viter, vstep
+#     return titer, tstep, viter, vstep
 
 
 if __name__ == '__main__':
