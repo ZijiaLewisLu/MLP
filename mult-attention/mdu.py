@@ -6,7 +6,7 @@ from tqdm import tqdm
 import re
 from glob import glob
 
-_START_VOCAB = ["<PAD>", "<UNK>", "<STOP>"]
+_START_VOCAB = ["<pad>", "<unk>", "<stop>"]
 
 
 def format_data(js):
@@ -25,7 +25,7 @@ def format_data(js):
                     context,
                     q.strip(),
                     answer))
-        return formated
+    return formated
 
 
 def filter_data(formated, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
@@ -74,40 +74,41 @@ def filter_data(formated, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
     return catego
 
 
-def token_sample(data, replace=u"['\",\/#$%\^&\*:{}=\-_`~()\[\]\s]+", normalize_digit=True):
+def token_sample(data, replace=u"['\",\/#$%\^&\*:;{}=\-_`~()\[\]\s]+", normalize_digit=True):
     c, q, a_s, period_loc, asi = data
     sentence = []
-    for i in range(len(period_loc)-1):
-        s = c[period_loc[i]:period_loc[i+1]].strip('. ').lower()
+    for i in range(len(period_loc) - 1):
+        s = c[period_loc[i]:period_loc[i + 1]].strip('. ').lower()
         s = re.sub(replace, ' ', s)
         if normalize_digit:
             s = re.sub('\d', '0', s)
         s = s.strip(' ').split(' ')
         sentence.append(s)
-    
+
     q = q.strip(' ?').lower()
     q = re.sub(replace, ' ', q)
     if normalize_digit:
         q = re.sub('\d', '0', q)
     q = q.strip(' ').split(' ')
-    
+
     return [sentence, q, asi]
 
 # @DeprecationWarning
-def token_data(origin_file, save_name, normalize_digit=True):
-    if os.path.exists(save_name):
-        with open(save_name, 'r') as f:
-            formated = json.load(f)
-    else:
-        with open(origin_file, 'r') as f:
-            squad = json.load(f)
-        fours = format_data(squad)
-        good, bad, abr, mys = filter_data(fours)
-        formated = [token_sample(_, normalize_digit=normalize_digit)
-                    for _ in good]
-        with open(save_name, 'w') as f:
-            json.dump(formated, f, indent=4)
-    return formated
+# def token_data(origin_file, save_name, normalize_digit=True):
+#     if os.path.exists(save_name):
+#         with open(save_name, 'r') as f:
+#             formated = json.load(f)
+#     else:
+#         with open(origin_file, 'r') as f:
+#             squad = json.load(f)
+#         fours = format_data(squad)
+#         good, bad, abr, mys = filter_data(fours)
+#         formated = [token_sample(_, normalize_digit=normalize_digit)
+#                     for _ in good]
+#         with open(save_name, 'w') as f:
+#             json.dump(formated, f, indent=4)
+#     return formated
+
 
 def create_vocab(data_triple, cap=None):
     X = []
@@ -133,49 +134,110 @@ def create_vocab(data_triple, cap=None):
     return vocab
 
 
-def data2id(data, vocab, unk="<UNK>"):
-    unk_id = vocab[unk]
-    trans = lambda x: vocab.get(x, unk_id)
-    ids = []
-    for sen, qa, aid in data:
-        sen = [map(trans, _) for _ in sen]
-        qa = map(trans, qa)
-        ids.append([sen, qa, aid])
+def restruct_glove_words(fname):
+    words = []
+    with open(fname, 'r') as f:
+        for line in f:
+            line = line.strip('\n').split(' ')[0]
+            words.append(line)
+    return words
+
+
+def restruct_glove_embedding(fname, vocab, dim=300):
+    V = len(vocab)
+    done = set()
+    embedding = np.zeros([V, dim])
+    with open(fname, 'r') as f:
+        for line in f:
+            line = line.strip('\n').split(' ')
+            word = line[0]
+            if word in vocab:
+                ID = vocab[word]
+                embedding[ID] = map(float, line[1:])
+                done.add(ID)
+    assert len(done) == V
+    return embedding
+
+
+def create_vocab_glove(data_triple, glove_words, cap=None):
+    X = []
+    for sentence, q, asi in data_triple:
+        sentence.append(q)
+        for s in sentence:
+            X.extend(s)
+
+    f = {}
+    for t in X:
+        if t in f:
+            f[t] += 1
+        else:
+            f[t] = 1
+
+    vocab_list = ['<unk>'] + sorted(f, key=f.get, reverse=True)
+    glove_words = set(glove_words)
+    i = 0
+    condition = lambda x: (x < len(vocab_list) and x <
+                           cap) if cap else (x < len(vocab_list))
+    while condition(i):
+        k = vocab_list[i]
+        if k not in glove_words:
+            vocab_list.pop(i)
+        else:
+            i += 1
+    if cap:
+        vocab_list = vocab_list[:cap]
+
+    vocab = {k: i for i, k in enumerate(vocab_list)}
+    return vocab
+
+
+def _t2id(tlist, v, unk_id=0):
+    ids = [v.get(t, unk_id) for t in tlist]
     return ids
 
-def process_data(data_path='../data/squad', save_path='../data/squad/', cap=None, normalize_digit=True):
+def tokens2id(data, vocab, unk="<unk>"):
+    unk_id = vocab[unk]
+    ids = []
+    for sen, qu, aid in data:
+        sen_id = [_t2id(_, vocab, unk_id) for _ in sen]
+        qu_id = _t2id(qu, vocab, unk_id)
+        ids.append([sen_id, qu_id, aid])
+    return ids
 
-    train_js = glob(os.path.join(data_path, 'train-v*.json'))[0]
-    dev_js = glob(os.path.join(data_path, 'dev-v*.json'))[0]
+# def process_data(data_path='../data/squad', save_path='../data/squad/',
+# cap=None, normalize_digit=True):
 
-    # token data
-    formated_save_path = os.path.join(save_path, 'formated')
-    train_token = token_data(
-        train_js, formated_save_path + '_train.js', normalize_digit=normalize_digit)
-    dev_token = token_data(dev_js, formated_save_path +
-                           '_dev.js', normalize_digit=normalize_digit)
+#     train_js = glob(os.path.join(data_path, 'train-v*.json'))[0]
+#     dev_js = glob(os.path.join(data_path, 'dev-v*.json'))[0]
 
-    # load vocab
-    if cap is None:
-        vocab_path = os.path.join(save_path, 'vocab_full.js')
-    else:
-        vocab_path = os.path.join(save_path, 'vocab_%d.js' % cap)
-    if os.path.exists(vocab_path):
-        with open(vocab_path, 'r') as f:
-            vocab = json.load(f)
-        print 'Vocabulary loaded'
-    else:
-        vocab = create_vocab(formated, cap=cap)
-        with open(vocab_path, 'w') as f:
-            json.dump(vocab, f, indent=4)
-        print 'Vocabulary created'
+#     # token data
+#     formated_save_path = os.path.join(save_path, 'formated')
+#     train_token = token_data(
+#         train_js, formated_save_path + '_train.js', normalize_digit=normalize_digit)
+#     dev_token = token_data(dev_js, formated_save_path +
+#                            '_dev.js', normalize_digit=normalize_digit)
 
-    # transform data
-    ids_path = os.path.join(save_path, 'ids_vocab%d' % len(vocab))
-    train_ids = data2id(train_token, vocab)
-    dev_ids = data2id(dev_token, vocab)
-    _save(ids_path + '_train.txt', train_ids)
-    _save(ids_path + '_dev.txt', dev_ids)
+#     # load vocab
+#     if cap is None:
+#         vocab_path = os.path.join(save_path, 'vocab_full.js')
+#     else:
+#         vocab_path = os.path.join(save_path, 'vocab_%d.js' % cap)
+#     if os.path.exists(vocab_path):
+#         with open(vocab_path, 'r') as f:
+#             vocab = json.load(f)
+#         print 'Vocabulary loaded'
+#     else:
+#         vocab = create_vocab(formated, cap=cap)
+#         with open(vocab_path, 'w') as f:
+#             json.dump(vocab, f, indent=4)
+#         print 'Vocabulary created'
+
+#     # transform data
+#     ids_path = os.path.join(save_path, 'ids_vocab%d' % len(vocab))
+#     train_ids = data2id(train_token, vocab)
+#     dev_ids = data2id(dev_token, vocab)
+#     _save(ids_path + '_train.txt', train_ids)
+#     _save(ids_path + '_dev.txt', dev_ids)
 
 
 def _transform(d, l, end, pad=0):
@@ -222,7 +284,8 @@ def batchIter(batch_size, data, sN, sL, qL, stop_id=2):
                 P[i, j], p_len[i, j] = _transform(s, sL, stop_id)
             Q[i], q_len[i] = _transform(q, qL, stop_id)
             for a in aid:
-                if a < sN: A[i][a] = 1
+                if a < sN:
+                    A[i][a] = 1
 
         yield idx, P, p_len, Q, q_len, A
 
@@ -235,7 +298,8 @@ def _save(_fname, _data):
             for s in seq:
                 f.write(" ".join(map(str, s)) + '\n')
             f.write(" ".join(map(str, qur)) + '\n')
-            f.write( " ".join(map(str,aid))+'\n\n')
+            f.write(" ".join(map(str, aid)) + '\n\n')
+
 
 def _load(_fname):
     D = []

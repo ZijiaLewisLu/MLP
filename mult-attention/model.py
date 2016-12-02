@@ -10,7 +10,8 @@ class ML_Attention(object):
                  dropout_rate=1,
                  l2_rate=5e-3,
                  optim='Adam',
-                 attention='bilinear'):
+                 attention='bilinear',
+                 glove=False):
         """
         sN: sentence number 
         sL: sentence length
@@ -22,7 +23,7 @@ class ML_Attention(object):
         # self.q_len   = tf.placeholder(tf.int32, [batch_size], name='q_len')
         self.answer = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
 
-        self.emb = tf.get_variable("emb", [vocab_size, embed_size])
+        self.emb = tf.get_variable("emb", [vocab_size, embed_size], trainable=(not glove))
         embed_p = tf.nn.embedding_lookup(
             self.emb, self.passage, name='embed_p')  # N,sN,sL,E
         embed_q = tf.nn.embedding_lookup(
