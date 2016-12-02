@@ -87,3 +87,13 @@ def evaluate(model, sess, step=50, check=False):
     print '======= dev set =========='
     v = _eval(viter)
     return t+v
+
+
+def concat_attention(p_rep, q_rep, Wp, Wq, Ws):
+    x = np.dot(p_rep, Wp) + np.dot(q_rep, Wq)
+    x = np.tanh(x)
+    x = x.dot(Ws)
+    return x
+
+def mock_attention(sess):
+    pass
