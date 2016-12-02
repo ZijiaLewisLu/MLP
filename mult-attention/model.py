@@ -11,9 +11,9 @@ class ML_Attention(object):
                     optim='Adam',
                     attention='bilinear'):
         self.passage = tf.placeholder(tf.int32, [batch_size, sN, sL], name='passage')
-        self.p_len   = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
+        # self.p_len   = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
         self.query   = tf.placeholder(tf.int32, [batch_size, qL], name='query')
-        self.q_len   = tf.placeholder(tf.int32, [batch_size], name='q_len')
+        # self.q_len   = tf.placeholder(tf.int32, [batch_size], name='q_len')
         self.answer  = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
 
         self.emb = tf.get_variable("emb", [vocab_size, embed_size])
@@ -106,6 +106,7 @@ class ML_Attention(object):
         self.prediction = prediction
 
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
+        # a[i] = p_rep[i] * W * q_rep
         with tf.variable_scope("bilinear_attention"):
             W = tf.get_variable('W', [2*hidden_size, 2*hidden_size])
             atten = []
@@ -117,6 +118,7 @@ class ML_Attention(object):
         return atten
 
     def concat_attention(self, hidden_size, sN, p_rep, q_rep):
+        # a[i] = Ws * tanh( p_rep[i]*Wp + q_rep*Wq )
         with tf.variable_scope("concat_attention"):
             Wp = tf.get_variable('Wp', [2*hidden_size, 2*hidden_size])
             Wq = tf.get_variable('Wq', [2*hidden_size, 2*hidden_size])
@@ -127,8 +129,6 @@ class ML_Attention(object):
                 a = tf.tanh( tf.matmul(p_rep[i],Wp)+Q ) # N, 2H
                 atten.append(a)
             atten = tf.pack(atten, axis=1) # N, sN, 2H
-            atten = tf.reduce_sum(atten*Ws, 2, name='attention') # N, sN, 1
-            # P = tf.pack(p_rep, 1) # N, sN, 2H
-            # context = tf.reduce_sum( P*atten, 1 )
+            atten = tf.reduce_sum(atten*Ws, 2, name='attention') # N, sN
         return atten
 

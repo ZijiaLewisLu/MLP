@@ -122,9 +122,9 @@ def main(_):
             loss, accuracy, _, _, sum_str = sess.run( feed_in, 
                                             feed_dict={
                                                 model.passage: P,
-                                                model.p_len: p_len,
+                                                # model.p_len: p_len,
                                                 model.query: Q,
-                                                model.q_len: q_len,
+                                                # model.q_len: q_len,
                                                 model.answer: A
                                             } )
             running_acc += accuracy
