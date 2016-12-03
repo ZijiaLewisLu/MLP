@@ -5,35 +5,40 @@ import tensorflow as tf
 import time
 import json
 import numpy as np
-from utils import pp, define_gpu
+from utils import pp
 from mdu import batchIter
 from mdu import _load, restruct_glove_embedding
-from model import ML_Attention
+# from model import ML_Attention
 
 
 flags = tf.app.flags
+
+flags.DEFINE_integer("gpu", 3, "the number of gpus to use")
+flags.DEFINE_integer("data_size", None, "Number of files to train on")
+flags.DEFINE_float("eval_every", 100.0, "Eval every step")
+flags.DEFINE_float("save_every", 500.0, "Eval every step")
+flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
+flags.DEFINE_string("data_dir", "data/squad", "Data")
+flags.DEFINE_string("load_path", None, "The path to old model.")
+flags.DEFINE_boolean("track", False, "whether use glove embedding")
+
+
 flags.DEFINE_integer("epoch", 60, "Epoch to train")
 flags.DEFINE_integer("vocab_size", 60000, "The size of vocabulary")
 flags.DEFINE_integer("batch_size", 32, "The size of batch images")
-flags.DEFINE_integer("gpu", 3, "the number of gpus to use")
-flags.DEFINE_integer("data_size", None, "Number of files to train on")
-flags.DEFINE_integer("hidden_size", 256,
-                     "Hidden dimension for rnn and fully connected layer")
 flags.DEFINE_integer("embed_size", 300, "Embed size")
-flags.DEFINE_float("eval_every", 100.0, "Eval every step")
-flags.DEFINE_float("save_every", 500.0, "Eval every step")
-flags.DEFINE_float("learning_rate", 3e-5, "Learning rate")
+flags.DEFINE_integer("hidden_size", 256, "Hidden dimension")
+flags.DEFINE_float("learning_rate", 3e-4, "Learning rate")
 # flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 # flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
 flags.DEFINE_float("dropout", 0.9, "Dropout rate")
 flags.DEFINE_float("l2_rate", 0.0, "l2 regularization rate")
-flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
-flags.DEFINE_string("data_dir", "data/squad", "Data")
-flags.DEFINE_string("load_path", None, "The path to old model.")
-flags.DEFINE_string("optim", 'SGD', "The optimizer to use")
+flags.DEFINE_string("optim", 'Adam', "The optimizer to use")
 flags.DEFINE_string("atten", 'bilinear', "Attention Method")
+flags.DEFINE_string("model", 'bow', "Model")
 flags.DEFINE_boolean("glove", False, "whether use glove embedding")
-flags.DEFINE_boolean("track", False, "whether use glove embedding")
+
+
 FLAGS = flags.FLAGS
 
 # less often changed parameters
@@ -90,6 +95,28 @@ def save_track(data, base_name):
         np.save(fname, d)
 
 
+def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
+    if FLAGS.model == 'bow':
+        from model import ML_Attention as Net
+    elif FLAGS.model == 'rr':
+        from model_gru import ML_Attention as Net
+    # elif FLAGS.model == 'share':
+        # from model_share import ML_Project as Net
+    else:
+        raise ValueError(FLAGS.model)
+
+    model = Net(FLAGS.batch_size, sN, sL, qL, FLAGS.vocab_size, FLAGS.embed_size, FLAGS.hidden_size,
+                learning_rate=FLAGS.learning_rate,
+                dropout_rate=FLAGS.dropout,
+                l2_rate=FLAGS.l2_rate,
+                optim=FLAGS.optim,
+                attention=FLAGS.atten,
+                glove=FLAGS.glove
+                )
+
+    return model
+
+
 def main(_):
     pp.pprint(flags.FLAGS.__flags)
 
@@ -99,13 +126,7 @@ def main(_):
         os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu)
 
     sess = tf.Session()
-    model = ML_Attention(FLAGS.batch_size, sN, sL, qL, FLAGS.vocab_size, FLAGS.embed_size, FLAGS.hidden_size,
-                         learning_rate=FLAGS.learning_rate,
-                         dropout_rate=FLAGS.dropout,
-                         l2_rate=FLAGS.l2_rate,
-                         optim=FLAGS.optim,
-                         attention=FLAGS.atten,
-                         glove=FLAGS.glove)
+    model = create_model(FLAGS)
     print '  Model Built'
 
     if FLAGS.glove:

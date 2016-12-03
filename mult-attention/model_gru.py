@@ -13,9 +13,9 @@ class ML_Attention(object):
                  attention='bilinear',
                  glove=False):
         """
-        sN: sentence number 
-        sL: sentence length
-        qL: query length
+        sN: sentence number  10
+        sL: sentence length  50
+        qL: query length     15   
         """
         self.passage = tf.placeholder(
             tf.int32, [batch_size, sN, sL], name='passage')
@@ -32,31 +32,35 @@ class ML_Attention(object):
             self.emb, self.query, name='embed_q')  # N,qL,E
         self.embed_sum = tf.histogram_summary("embed", self.emb)
 
+        sentence = tf.unpack(embed_p, axis=1)  # [N, sL, E] *sN
+        sentence_rep = []
+        with tf.variable_scope("sentence_represent"):
+            for tokens in sentence:
+                tokens = tf.unpack(tokens, axis=1)  # [N, E] * sL
+                _p, _ = tf.nn.rnn(
+                    rnn_cell.GRUCell(hidden_size), tokens, dtype=tf.float32)
+                sentence_rep.append(_p)  # [N, H] * sL
+
         query_token = tf.unpack(embed_q, axis=1)
         with tf.variable_scope("query_represent"):
             q_rep, final_state_fw, final_state_bw = tf.nn.bidirectional_rnn(
-                rnn_cell.BasicLSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
-                rnn_cell.BasicLSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
+                rnn_cell.GRUCell( hidden_size ),
+                rnn_cell.GRUCell( hidden_size ),
                 query_token, dtype=tf.float32)
             _, bfinal = tf.split(1, 2, q_rep[0])
             ffinal, _ = tf.split(1, 2, q_rep[-1])
             q_rep = tf.concat(1, [ffinal, bfinal])
 
-        bow_p = tf.reduce_sum(embed_p, 2)  # N, sN, E
-        sentence = tf.unpack(bow_p, axis=1)  # [ N,E ] * sN
+        # sentence = tf.unpack(bow_p, axis=1)  # [ N,E ] * sN
         with tf.variable_scope("passage_represent"):
             p_rep, final_state_fw, final_state_bw = tf.nn.bidirectional_rnn(
-                rnn_cell.BasicLSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
-                rnn_cell.BasicLSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
-                sentence, 
-                dtype=tf.float32, 
-                initial_state_fw=final_state_fw, 
+                rnn_cell.GRUCell( hidden_size ),
+                rnn_cell.GRUCell( hidden_size ),
+                sentence_rep,
+                dtype=tf.float32,
+                initial_state_fw=final_state_fw,
                 initial_state_bw=final_state_bw,
-                )
+            )
 
         if dropout_rate < 1:
             q_rep = tf.nn.dropout(q_rep, dropout_rate)
@@ -93,22 +97,23 @@ class ML_Attention(object):
             raise ValueError(optim)
         self.gvs = self.optim.compute_gradients(self.loss)
         self.train_op = self.optim.apply_gradients(self.gvs)
-        accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)
-        loss_sum = tf.scalar_summary('T_loss', tf.reduce_mean(self.loss))
+        self.check_op = tf.add_check_numerics_ops()
 
+        # summary ==========================
         pv_sum = tf.histogram_summary('Var_prediction', prediction)
         av_sum = tf.histogram_summary('Var_answer', answer_id)
+        self.hist_sum = [self.embed_sum, pv_sum, av_sum]
 
-        self.train_summary = tf.merge_summary(
-            [accu_sum, loss_sum, self.embed_sum, pv_sum, av_sum])
-
-        self.check_op = tf.add_check_numerics_ops()
+        accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)
+        loss_sum = tf.scalar_summary('T_loss', tf.reduce_mean(self.loss))
+        self.train_summary = tf.merge_summary([accu_sum, loss_sum])
 
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
-        self.validate_summary = tf.merge_summary([Vaccu_sum, Vloss_sum])
+        self.validate_summary = tf.merge_summary(
+            [Vaccu_sum, Vloss_sum] + self.hist_sum)
 
-        # store para =======================
+        # store param =======================
         self.p_rep = p_rep
         self.q_rep = q_rep
         self.embed_p = embed_p
