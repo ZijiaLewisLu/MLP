@@ -144,8 +144,12 @@ def main(_):
     initialize(sess, saver, FLAGS.load_path)
     print '  Variable inited'
 
-    ids_path = os.path.join(
-        FLAGS.data_dir, 'ids_glove%d_train.txt' % FLAGS.vocab_size)
+    if FLAGS.glove:
+        ids_path = os.path.join(
+            FLAGS.data_dir, 'ids_not_glove%d_train.txt' % FLAGS.vocab_size)
+    else:
+        ids_path = os.path.join(
+            FLAGS.data_dir, 'ids_glove%d_train.txt' % FLAGS.vocab_size)
     train_data, validate_data, vsize = prepare_data(
         ids_path, data_size=FLAGS.data_size, val_rate=val_rate)
     print '  Data Loaded'
@@ -167,13 +171,13 @@ def main(_):
 
     counter = 1
     vcounter = 1
-    start_time = time.time()
     writer = tf.train.SummaryWriter(log_dir, sess.graph)
+    start_time = time.time()
     running_acc = 0.0
     running_loss = 0.0
     max_acc = [0, None, None, None]
     min_loss = [np.inf, None, None, None]
-
+    print '  Start Training'
     for epoch_idx in range(FLAGS.epoch):
         np.random.shuffle(train_data)
         titer = batchIter(FLAGS.batch_size, train_data,

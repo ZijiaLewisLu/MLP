@@ -5,8 +5,12 @@ import os
 from tqdm import tqdm
 import re
 from glob import glob
+from nltk import TreebankWordTokenizer
+from string import punctuation
+_tokenrize = TreebankWordTokenizer().tokenize
 
-_START_VOCAB = ["<pad>", "<unk>", "<stop>"]
+
+_START_VOCAB = ["<unk>", "<pad>", "<stop>"]
 
 
 def format_data(js):
@@ -73,24 +77,24 @@ def filter_data(formated, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
         % (len(catego[0]), len(catego[1]), len(catego[2]), len(catego[3]), len(formated))
     return catego
 
+def token(words):
+    ts = _tokenrize(words)
+    ts = [ x.strip(punctuation) for x in ts ]
+    ts = [ x for x in ts if len(x)>1 ]
+    return ts
 
-def token_sample(data, replace=u"['\",\/#$%\^&\*:;{}=\-_`~()\[\]\s]+", normalize_digit=True):
+def token_sample(data, normalize_digit=True):
     c, q, a_s, period_loc, asi = data
     sentence = []
-    for i in range(len(period_loc) - 1):
-        s = c[period_loc[i]:period_loc[i + 1]].strip('. ').lower()
-        s = re.sub(replace, ' ', s)
+    for i in range(len(period_loc)-1):
+        s = c[period_loc[i]:period_loc[i+1]].strip('. ').lower()
         if normalize_digit:
             s = re.sub('\d', '0', s)
-        s = s.strip(' ').split(' ')
-        sentence.append(s)
-
+        sentence.append(token(s))
     q = q.strip(' ?').lower()
-    q = re.sub(replace, ' ', q)
     if normalize_digit:
         q = re.sub('\d', '0', q)
-    q = q.strip(' ').split(' ')
-
+    q = token(q)
     return [sentence, q, asi]
 
 # @DeprecationWarning
@@ -113,9 +117,10 @@ def token_sample(data, replace=u"['\",\/#$%\^&\*:;{}=\-_`~()\[\]\s]+", normalize
 def create_vocab(data_triple, cap=None):
     X = []
     for sentence, q, asi in data_triple:
-        sentence.append(q)
+        X.extend(q)
         for s in sentence:
             X.extend(s)
+
 
     # calculate frequency
     f = {}
@@ -131,7 +136,7 @@ def create_vocab(data_triple, cap=None):
 
     # build vocab
     vocab = {k: i for i, k in enumerate(vocab_list)}
-    return vocab
+    return vocab, f
 
 
 def restruct_glove_words(fname):
@@ -162,7 +167,7 @@ def restruct_glove_embedding(fname, vocab, dim=300):
 def create_vocab_glove(data_triple, glove_words, cap=None):
     X = []
     for sentence, q, asi in data_triple:
-        sentence.append(q)
+        X.extend(q)
         for s in sentence:
             X.extend(s)
 

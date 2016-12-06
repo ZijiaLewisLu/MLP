@@ -34,12 +34,15 @@ class ML_Attention(object):
 
         sentence = tf.unpack(embed_p, axis=1)  # [N, sL, E] *sN
         sentence_rep = []
-        with tf.variable_scope("sentence_represent"):
-            for tokens in sentence:
+        with tf.variable_scope("sentence_represent") as scope:
+            gru_cell = rnn_cell.GRUCell(hidden_size)
+            for i, tokens in enumerate(sentence):
+                if i > 0:
+                    scope.reuse_variables()
                 tokens = tf.unpack(tokens, axis=1)  # [N, E] * sL
                 _p, _ = tf.nn.rnn(
-                    rnn_cell.GRUCell(hidden_size), tokens, dtype=tf.float32)
-                sentence_rep.append(_p)  # [N, H] * sL
+                    gru_cell, tokens, dtype=tf.float32)
+                sentence_rep.append(_p[-1])  # [N, H] * sL
 
         query_token = tf.unpack(embed_q, axis=1)
         with tf.variable_scope("query_represent"):
@@ -47,11 +50,14 @@ class ML_Attention(object):
                 rnn_cell.GRUCell( hidden_size ),
                 rnn_cell.GRUCell( hidden_size ),
                 query_token, dtype=tf.float32)
+
             _, bfinal = tf.split(1, 2, q_rep[0])
             ffinal, _ = tf.split(1, 2, q_rep[-1])
             q_rep = tf.concat(1, [ffinal, bfinal])
 
         # sentence = tf.unpack(bow_p, axis=1)  # [ N,E ] * sN
+        # print type(final_state_fw)
+        # print final_state_fw
         with tf.variable_scope("passage_represent"):
             p_rep, final_state_fw, final_state_bw = tf.nn.bidirectional_rnn(
                 rnn_cell.GRUCell( hidden_size ),
