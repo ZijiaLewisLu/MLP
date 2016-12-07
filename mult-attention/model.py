@@ -47,6 +47,7 @@ class ML_Attention(object):
             ffinal, _ = tf.split(1, 2, q_rep[-1])
             q_rep = tf.concat(1, [ffinal, bfinal])
 
+
         bow_p = tf.reduce_sum(embed_p, 2)  # N, sN, E
         sentence = tf.unpack(bow_p, axis=1)  # [ N,E ] * sN
         with tf.variable_scope("passage_represent"):
@@ -95,7 +96,15 @@ class ML_Attention(object):
             self.optim = tf.train.GradientDescentOptimizer(learning_rate)
         else:
             raise ValueError(optim)
-        self.gvs = self.optim.compute_gradients(self.loss)
+        gvs = self.optim.compute_gradients(self.loss)
+        self.gvs = []
+        gs = [ gv[0] for gv in gvs ]
+        gs, norm = tf.clip_by_global_norm(gs, 5)
+        
+        # import ipdb; ipdb.set_trace()
+        for i, gv in enumerate(gvs):        
+            self.gvs.append( (gs[i], gv[-1]) )
+
         self.train_op = self.optim.apply_gradients(self.gvs, global_step=global_step)
         self.check_op = tf.add_check_numerics_ops()
 
@@ -107,14 +116,21 @@ class ML_Attention(object):
         av_sum = tf.histogram_summary('Var_answer', answer_id)
 
         gv_sum = []
+        gv_hist_sum = []
+
         for g, v in self.gvs:
             v_sum = tf.scalar_summary( "I_{}-var/mean".format(v.name), tf.reduce_mean(v) )
-            gv_sum.append(v_sum)
+            v_his = tf.histogram_summary( "I_{}-var".format(v.name), v)
+            
             if g is not None:
                 g_sum = tf.scalar_summary( "I_{}-grad/mean".format(v.name), tf.reduce_mean(g) )
-                gv_sum.append(g_sum)
+                zero_frac = tf.scalar_summary( "I_{}-grad/sparsity".format(v.name), tf.nn.zero_fraction(g) )
+                g_his = tf.histogram_summary( "I_{}-grad".format(v.name), g)
+        
+            gv_sum += [v_sum, g_sum, zero_frac]
+            gv_hist_sum += [v_his, g_his]
 
-        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum, gv_sum])
+        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum, gv_sum, gv_hist_sum])
 
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))

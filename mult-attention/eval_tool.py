@@ -22,7 +22,8 @@ def one_step(_iter, model, sess, fetch=None):
                             # model.p_len: p_len,
                             model.query: Q,
                             # model.q_len: q_len,
-                            model.answer: A
+                            model.answer: A,
+                            model.dropout: 1.0,
                                 })
     return [batch_idx, P, p_len, Q, q_len, A], rslt
 
@@ -36,7 +37,7 @@ def cross_entropy_loss(logit, label, axis=-1):
     log = np.log(logit)
     return label * log
 
-def evaluate(model, sess, step=50, check=False):
+def evaluate(model, sess, step=50, check=False, sN=sN, sL=sL, qL=qL, batch_size=batch_size):
     train, val, vsize = prepare_data('./data/squad/ids_vocab50000_train.txt')
     np.random.shuffle(train)
     np.random.shuffle(val)
