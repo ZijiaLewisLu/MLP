@@ -7,11 +7,11 @@ class ML_Attention(object):
     def __init__(self, batch_size, sN, sL, qL,
                  vocab_size, embed_size, hidden_size,
                  learning_rate=5e-3,
-                 dropout_rate=1,
                  l2_rate=5e-3,
                  optim='Adam',
                  attention='bilinear',
-                 glove=False):
+                 glove=False,
+                 train_glove=False):
         """
         sN: sentence number  10
         sL: sentence length  50
@@ -23,6 +23,9 @@ class ML_Attention(object):
         self.query = tf.placeholder(tf.int32, [batch_size, qL], name='query')
         # self.q_len   = tf.placeholder(tf.int32, [batch_size], name='q_len')
         self.answer = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
+        self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
+
+        global_step = tf.Variable(0, name='global_step', trainable=False)
 
         self.emb = tf.get_variable(
             "emb", [vocab_size, embed_size], trainable=(not glove))
@@ -39,16 +42,16 @@ class ML_Attention(object):
             for i, tokens in enumerate(sentence):
                 if i > 0:
                     scope.reuse_variables()
-                tokens = tf.unpack(tokens, axis=1)  # [N, E] * sL
-                _p, _ = tf.nn.rnn(
-                    gru_cell, tokens, dtype=tf.float32)
+                T = tf.unpack(tokens, axis=1)  # [N, E] * sL
+                _p, _ = tf.nn.rnn(gru_cell, T, dtype=tf.float32)
+
                 sentence_rep.append(_p[-1])  # [N, H] * sL
 
         query_token = tf.unpack(embed_q, axis=1)
         with tf.variable_scope("query_represent"):
             q_rep, final_state_fw, final_state_bw = tf.nn.bidirectional_rnn(
-                rnn_cell.GRUCell( hidden_size ),
-                rnn_cell.GRUCell( hidden_size ),
+                rnn_cell.GRUCell(hidden_size),
+                rnn_cell.GRUCell(hidden_size),
                 query_token, dtype=tf.float32)
 
             _, bfinal = tf.split(1, 2, q_rep[0])
@@ -60,17 +63,17 @@ class ML_Attention(object):
         # print final_state_fw
         with tf.variable_scope("passage_represent"):
             p_rep, final_state_fw, final_state_bw = tf.nn.bidirectional_rnn(
-                rnn_cell.GRUCell( hidden_size ),
-                rnn_cell.GRUCell( hidden_size ),
+                rnn_cell.GRUCell(hidden_size),
+                rnn_cell.GRUCell(hidden_size),
                 sentence_rep,
                 dtype=tf.float32,
-                initial_state_fw=final_state_fw,
-                initial_state_bw=final_state_bw,
+                # initial_state_fw=final_state_fw,
+                # initial_state_bw=final_state_bw,
             )
 
-        if dropout_rate < 1:
-            q_rep = tf.nn.dropout(q_rep, dropout_rate)
-            p_rep = [tf.nn.dropout(p, dropout_rate) for p in p_rep]
+        q_rep = tf.nn.dropout(q_rep, self.dropout)
+        with tf.name_scope('p_rep_dropout'):
+            p_rep = [tf.nn.dropout(p, self.dropout) for p in p_rep]
 
         if attention == 'bilinear':
             atten = self.bilinear_attention(hidden_size, sN, p_rep, q_rep)
@@ -101,23 +104,42 @@ class ML_Attention(object):
             self.optim = tf.train.GradientDescentOptimizer(learning_rate)
         else:
             raise ValueError(optim)
-        self.gvs = self.optim.compute_gradients(self.loss)
-        self.train_op = self.optim.apply_gradients(self.gvs)
+
+        gvs = self.optim.compute_gradients(self.loss)
+        gs, norm = tf.clip_by_global_norm([gv[0] for gv in gvs], 5)
+        self.gvs = [(gs[i], gv[-1]) for i, gv in enumerate(gvs)]
+
+        self.train_op = self.optim.apply_gradients(
+            self.gvs, global_step=global_step)
         self.check_op = tf.add_check_numerics_ops()
 
         # summary ==========================
         pv_sum = tf.histogram_summary('Var_prediction', prediction)
         av_sum = tf.histogram_summary('Var_answer', answer_id)
-        self.hist_sum = [self.embed_sum, pv_sum, av_sum]
+        # self.hist_sum = [self.embed_sum, pv_sum, av_sum]
+
+        gv_sum = []
+        gv_hist_sum = []
+        for g, v in self.gvs:
+            v_sum = tf.scalar_summary( "I_{}-var/mean".format(v.name), tf.reduce_mean(v) )
+            v_his = tf.histogram_summary( "I_{}-var".format(v.name), v)
+            
+            if g is not None:
+                g_sum = tf.scalar_summary( "I_{}-grad/mean".format(v.name), tf.reduce_mean(g) )
+                zero_frac = tf.scalar_summary( "I_{}-grad/sparsity".format(v.name), tf.nn.zero_fraction(g) )
+                g_his = tf.histogram_summary( "I_{}-grad".format(v.name), g)
+        
+            gv_sum += [v_sum, g_sum, zero_frac]
+            gv_hist_sum += [v_his, g_his]
 
         accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)
         loss_sum = tf.scalar_summary('T_loss', tf.reduce_mean(self.loss))
-        self.train_summary = tf.merge_summary([accu_sum, loss_sum])
+        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum, gv_sum, gv_hist_sum])
 
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
         self.validate_summary = tf.merge_summary(
-            [Vaccu_sum, Vloss_sum] + self.hist_sum)
+            [Vaccu_sum, Vloss_sum, pv_sum, av_sum])
 
         # store param =======================
         self.p_rep = p_rep
@@ -125,6 +147,8 @@ class ML_Attention(object):
         self.embed_p = embed_p
         self.embed_q = embed_q
         self.prediction = prediction
+        self.global_step = global_step
+        self.gv_sum = gv_sum
 
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
         # a[i] = p_rep[i] * W * q_rep

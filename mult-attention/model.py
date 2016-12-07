@@ -75,7 +75,7 @@ class ML_Attention(object):
             raise ValueError(attention)
 
         self.score = atten  # N, sN
-        self.alignment = tf.nn.softmax(atten)
+        self.alignment = tf.nn.softmax(atten, name='alignment')
         self.loss = tf.nn.softmax_cross_entropy_with_logits(
             self.score, self.answer, name='loss')
         if l2_rate > 0:
@@ -96,6 +96,7 @@ class ML_Attention(object):
             self.optim = tf.train.GradientDescentOptimizer(learning_rate)
         else:
             raise ValueError(optim)
+        
         gvs = self.optim.compute_gradients(self.loss)
         self.gvs = []
         gs = [ gv[0] for gv in gvs ]
@@ -105,7 +106,7 @@ class ML_Attention(object):
         for i, gv in enumerate(gvs):        
             self.gvs.append( (gs[i], gv[-1]) )
 
-        self.train_op = self.optim.apply_gradients(self.gvs, global_step=global_step)
+        self.train_op = self.optim.apply_gradients(self.gvs, global_step=global_step, name='train_op')
         self.check_op = tf.add_check_numerics_ops()
 
         # summary ===========================        

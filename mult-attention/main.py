@@ -98,7 +98,7 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
     if FLAGS.model == 'bow':
         from model import ML_Attention as Net
     elif FLAGS.model == 'rr':
-        from model_gru import ML_Attention as Net
+        from rr_model import ML_Attention as Net
     # elif FLAGS.model == 'share':
         # from model_share import ML_Project as Net
     else:
@@ -142,7 +142,7 @@ def main(_):
     initialize(sess, saver, FLAGS.load_path)
     print '  Variable inited'
 
-    if FLAGS.glove:
+    if not FLAGS.glove:
         ids_path = os.path.join(
             FLAGS.data_dir, 'ids_not_glove%d_train.txt' % FLAGS.vocab_size)
     else:
@@ -150,7 +150,7 @@ def main(_):
             FLAGS.data_dir, 'ids_glove%d_train.txt' % FLAGS.vocab_size)
     train_data, validate_data, vsize = prepare_data(
         ids_path, data_size=FLAGS.data_size, val_rate=val_rate)
-    print '  Data Loaded'
+    print '  Data Loaded from %s' % ids_path
 
     log_dir = "%s/%s" % (FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
     save_dir = os.path.join(log_dir, 'ckpts')
@@ -215,14 +215,14 @@ def main(_):
                 if loss < min_loss[0]:
                     min_loss = [loss, score, align, A]
 
-            if gstep % 20 == 0:
+            if (gstep+1) % 20 == 0:
                 print "Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f" \
                     % (epoch_idx, batch_idx, tstep, time.time() - start_time, running_loss / 20.0, running_acc / 20.0)
                 sys.stdout.flush()
                 running_loss = 0.0
                 running_acc = 0.0
 
-            if gstep % FLAGS.eval_every == 0:
+            if (gstep+1) % FLAGS.eval_every == 0:
 
                 if FLAGS.track:
                     mark = str(time.time())
@@ -280,7 +280,7 @@ def main(_):
                     max_acc = [0, None, None, None]
                     min_loss = [np.inf, None, None, None]
 
-            if gstep % FLAGS.save_every == 0:
+            if (gstep+1) % FLAGS.save_every == 0:
                 fname = os.path.join(save_dir, 'model')
                 print "  Saving Model..."
                 saver.save(sess, fname, global_step=gstep)
