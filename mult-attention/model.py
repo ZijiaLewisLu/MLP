@@ -7,11 +7,11 @@ class ML_Attention(object):
     def __init__(self, batch_size, sN, sL, qL,
                  vocab_size, embed_size, hidden_size,
                  learning_rate=5e-3,
-                 dropout_rate=1,
                  l2_rate=5e-3,
                  optim='Adam',
                  attention='bilinear',
-                 glove=False):
+                 glove=False,
+                 train_glove=False):
         """
         sN: sentence number 
         sL: sentence length
@@ -23,9 +23,12 @@ class ML_Attention(object):
         self.query = tf.placeholder(tf.int32, [batch_size, qL], name='query')
         # self.q_len   = tf.placeholder(tf.int32, [batch_size], name='q_len')
         self.answer = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
+        self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
+
+        global_step = tf.Variable(0, name='global_step', trainable=False)
 
         self.emb = tf.get_variable(
-            "emb", [vocab_size, embed_size], trainable=(not glove))
+            "emb", [vocab_size, embed_size], trainable=(glove and train_glove))
         embed_p = tf.nn.embedding_lookup(
             self.emb, self.passage, name='embed_p')  # N,sN,sL,E
         embed_q = tf.nn.embedding_lookup(
@@ -35,9 +38,9 @@ class ML_Attention(object):
         query_token = tf.unpack(embed_q, axis=1)
         with tf.variable_scope("query_represent"):
             q_rep, final_state_fw, final_state_bw = tf.nn.bidirectional_rnn(
-                rnn_cell.BasicLSTMCell(
+                rnn_cell.LSTMCell(
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
-                rnn_cell.BasicLSTMCell(
+                rnn_cell.LSTMCell(
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
                 query_token, dtype=tf.float32)
             _, bfinal = tf.split(1, 2, q_rep[0])
@@ -48,9 +51,9 @@ class ML_Attention(object):
         sentence = tf.unpack(bow_p, axis=1)  # [ N,E ] * sN
         with tf.variable_scope("passage_represent"):
             p_rep, final_state_fw, final_state_bw = tf.nn.bidirectional_rnn(
-                rnn_cell.BasicLSTMCell(
+                rnn_cell.LSTMCell(
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
-                rnn_cell.BasicLSTMCell(
+                rnn_cell.LSTMCell(
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
                 sentence, 
                 dtype=tf.float32, 
@@ -58,9 +61,10 @@ class ML_Attention(object):
                 initial_state_bw=final_state_bw,
                 )
 
-        if dropout_rate < 1:
-            q_rep = tf.nn.dropout(q_rep, dropout_rate)
-            p_rep = [tf.nn.dropout(p, dropout_rate) for p in p_rep]
+        
+        q_rep = tf.nn.dropout(q_rep, self.dropout)
+        with tf.name_scope('p_rep_dropout'):
+            p_rep = [tf.nn.dropout(p, self.dropout) for p in p_rep]
 
         if attention == 'bilinear':
             atten = self.bilinear_attention(hidden_size, sN, p_rep, q_rep)
@@ -92,7 +96,7 @@ class ML_Attention(object):
         else:
             raise ValueError(optim)
         self.gvs = self.optim.compute_gradients(self.loss)
-        self.train_op = self.optim.apply_gradients(self.gvs)
+        self.train_op = self.optim.apply_gradients(self.gvs, global_step=global_step)
         accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)
         loss_sum = tf.scalar_summary('T_loss', tf.reduce_mean(self.loss))
 
@@ -114,6 +118,7 @@ class ML_Attention(object):
         self.embed_p = embed_p
         self.embed_q = embed_q
         self.prediction = prediction
+        self.global_step = global_step
 
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
         # a[i] = p_rep[i] * W * q_rep

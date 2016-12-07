@@ -9,14 +9,20 @@ import numpy as np
 from attentive_model import AttentiveReader
 
 flags = tf.app.flags
-flags.DEFINE_integer("data_size", 500, "")
+flags.DEFINE_integer("data_size", None, "")
 flags.DEFINE_string("data_dir", "data", "The name of data directory [data]")
 flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
 flags.DEFINE_string("load_path", None, "The path to old model. [None]")
 FLAGS = flags.FLAGS
 
-with open(os.path.join(FLAGS.load_path, 'Flags.js'), 'r') as f:
-    old_flag = json.load(f)
+if os.path.isdir(FLAGS.load_path):
+    with open(os.path.join(FLAGS.load_path, 'Flags.js'), 'r') as f:
+        old_flag = json.load(f)
+else:
+    js_path = os.path.join(FLAGS.load_path, '../../Flags.js')
+    js_path = os.path.abspath(js_path)
+    with open(js_path, 'r') as f:
+        old_flag = json.load(f)
 
 max_nsteps=1000
 max_query_length=20
@@ -89,6 +95,7 @@ def run(sess, model, data_iter, steps):
                    model.d_end: d_end,
                    model.q_end: q_end,
                    model.y: y, 
+                   model.dropout: 1.0,
                    }
         cost, accuracy = sess.run([model.loss, model.accuracy], feed)
         running_acc += accuracy
@@ -121,7 +128,7 @@ def main(_):
 
     # eval
     with tf.Session() as sess:
-        model = AttentiveReader(batch_size=batch_size, dropout_rate=1, size=hidden_size, activation=activation)
+        model = AttentiveReader(batch_size=batch_size, size=hidden_size, activation=activation)
         model.prepare_model()
         print "Model Build"
 

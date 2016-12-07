@@ -14,9 +14,10 @@ class AttentiveReader():
                  size=256,
                  max_nsteps=1000,
                  max_query_length=20,
-                 dropout_rate=0.9,
+                 # dropout_rate=0.9,
                  use_optimizer = 'RMS',
-                 activation='tanh'
+                 activation='tanh',
+                 attention='bilinear',
                  ):
 
         self.size = size
@@ -25,12 +26,13 @@ class AttentiveReader():
         self.max_nsteps = max_nsteps
         self.max_query_length = max_query_length
         self.vocab_size = vocab_size
-        self.dropout = dropout_rate
+        # self.dropout = dropout_rate
         self.l2_rate = l2_rate
         self.momentum = momentum
         self.decay = decay
         self.use_optimizer = use_optimizer
         self.activation = activation
+        self.attention = attention
 
         self.saver = None
 
@@ -41,6 +43,7 @@ class AttentiveReader():
         self.d_end = tf.placeholder(tf.int32, self.batch_size, name='docu-end')
         self.q_end = tf.placeholder(tf.int32, self.batch_size, name='quer-end')
         self.y = tf.placeholder(tf.float32, [self.batch_size, self.vocab_size], name='Y')
+        self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
 
         # Embeding
         self.emb = tf.get_variable("emb", [self.vocab_size, self.size])
@@ -49,9 +52,9 @@ class AttentiveReader():
         # shape: batch_size, sentence_length, embedding_size
         embed_q = tf.nn.embedding_lookup(self.emb, self.query, name='embed_q')
         embed_sum = tf.histogram_summary("embed", self.emb)
-        if self.dropout < 1:
-            embed_d = tf.nn.dropout(embed_d, keep_prob=self.dropout)
-            embed_q = tf.nn.dropout(embed_q, keep_prob=self.dropout)
+    
+        embed_d = tf.nn.dropout(embed_d, keep_prob=self.dropout)
+        embed_q = tf.nn.dropout(embed_q, keep_prob=self.dropout)
 
         # representation
         with tf.variable_scope("document_represent"):
@@ -64,8 +67,7 @@ class AttentiveReader():
                 embed_d, 
                 sequence_length=self.d_end, dtype=tf.float32)
             d_t = tf.concat(2, d_t)
-            if self.dropout < 1:
-                d_t = tf.nn.dropout(d_t, keep_prob=self.dropout)
+            d_t = tf.nn.dropout(d_t, keep_prob=self.dropout)
             d_t = tf.unpack(d_t, axis=1)
 
         with tf.variable_scope("query_represent"):
@@ -79,29 +81,15 @@ class AttentiveReader():
             q_f = tf.unpack(q_t[0], axis=1)
             q_b = tf.unpack(q_t[-1], axis=1)
             u = tf.concat(1, [q_f[-1], q_b[0]], name='u') # N, Hidden*2
-            if self.dropout < 1:
-                u = tf.nn.dropout(u, keep_prob=self.dropout)
+            u = tf.nn.dropout(u, keep_prob=self.dropout)
        
         # attention
-        W_ym = tf.get_variable('W_ym', [2 * self.size, self.size])
-        W_um = tf.get_variable('W_um', [2 * self.size, self.size])
-        W_ms = tf.get_variable('W_ms', [self.size])
-        m_t = []
-        # D = tf.reduce_sum(d*W_ym, 2, name='dW') # N, T
-        # U = tf.reduce_sum(d*W_um, 1, name='uW') # N
-        # m = tf.tanh(D+U) # N, T
-        U = tf.matmul(u, W_um) # N,H
-        for d in d_t:
-            # m_cur = tf.tanh(tf.matmul(d, W_ym) + U)
-            m_t.append( tf.matmul(d, W_ym)+U ) # N,H 
-        m = tf.pack(m_t, 1) # N,T,H
-        m = tf.tanh(m)
-        # print m.get_shape()
-        ms = tf.reduce_sum(m*W_ms, 2, keep_dims=True, name='ms') # N,T,1
-        s = tf.nn.softmax(ms, 1) # N,T,1
-        # s = tf.expand_dims(tf.nn.softmax(ms), -1)  # N,T,1
-        d = tf.pack(d_t, axis=1) # N,T,2E
-        r = tf.reduce_sum(s*d, 1, name='r')  # N, 2E
+        if self.attention == 'concat':
+            r = self.concat_attention(d_t, u)
+        elif self.attention == 'bilinear':
+            r = self.bilinear_attention(d_t, u)
+        else:
+            raise ValueError(self.attention)
 
         # predict
         W_rg = tf.get_variable("W_rg", [2 * self.size, self.size])
@@ -116,13 +104,12 @@ class AttentiveReader():
             g = mid
         else:
             raise ValueError(self.activation)
-        if self.dropout<1:
-            g = tf.nn.dropout(g, keep_prob=self.dropout)
+
+        g = tf.nn.dropout(g, keep_prob=self.dropout)
         g = tf.matmul(g, W_g, name='g_x_W')
 
         beact_sum = tf.scalar_summary('before activitation', tf.reduce_mean(mid))
         afact_sum = tf.scalar_summary('before activitation_after', tf.reduce_mean(g))
-
 
         self.loss = tf.nn.softmax_cross_entropy_with_logits(g, self.y, name='loss')
         if self.l2_rate > 0:
@@ -157,10 +144,11 @@ class AttentiveReader():
             if g is not None:
                 g_sum = tf.scalar_summary( "I_{}-grad/mean".format(v.name), tf.reduce_mean(g) )
                 gv_sum.append(g_sum)
+
         self.vname = [ v.name for g,v in self.grad_and_var ]
         self.vars  = [ v for g,v in self.grad_and_var ]
         self.gras  = [ g for g,v in self.grad_and_var ]
-        self.train_sum = tf.merge_summary([beact_sum, loss_sum, acc_sum, afact_sum] + gv_sum)
+        self.train_sum = tf.merge_summary([loss_sum, acc_sum])
 
         # validation sum
         v_loss_sum  = tf.scalar_summary("V_loss", tf.reduce_mean(self.loss))
@@ -169,9 +157,38 @@ class AttentiveReader():
 
         # import ipdb; ipdb.set_trace()
 
+    def concat_attention(self, d_t, u):
+        W_ym = tf.get_variable('W_ym', [2 * self.size, self.size])
+        W_um = tf.get_variable('W_um', [2 * self.size, self.size])
+        W_ms = tf.get_variable('W_ms', [self.size])
+        m_t = []
+        U = tf.matmul(u, W_um) # N,H
+        for d in d_t:
+            m_t.append( tf.matmul(d, W_ym)+U ) # N,H 
+        m = tf.pack(m_t, 1) # N,T,H
+        m = tf.tanh(m)
+        ms = tf.reduce_sum(m*W_ms, 2, keep_dims=True, name='ms') # N,T,1
+        s = tf.nn.softmax(ms, 1) # N,T,1
+        d = tf.pack(d_t, axis=1) # N,T,2E
+        r = tf.reduce_sum(s*d, 1, name='r')  # N, 2E
+        return r
+
+    def bilinear_attention(self,d_t, u):
+        W = tf.get_variable('W_bilinear', [2 * self.size, 2 * self.size])
+        atten = []
+        for d in d_t:
+            a = tf.matmul(d, W, name='dW')  # N, 2H
+            a = tf.reduce_sum(a * u, 1, name='Wq')  # N
+            atten.append(a)
+        atten = tf.pack(atten, axis=1, name='attention')  # N, T
+        atten = tf.nn.softmax(atten)
+        atten = tf.expand_dims(atten, 2) # N, T, 1
+        d = tf.pack(d_t, axis=1)
+        r = tf.reduce_sum(atten*d, 1, name='r')
+        return r
 
     def train(self, sess, vocab_size, epoch=25, data_dir="data", dataset_name="cnn",
-              log_dir='log/tmp/', load_path=None, data_size=3000, eval_every=1500, val_rate=0.1):
+              log_dir='log/tmp/', load_path=None, data_size=3000, eval_every=1500, val_rate=0.1, dropout_rate=0.9):
 
         print(" [*] Building Network...")
         start = time.time()
@@ -227,6 +244,7 @@ class AttentiveReader():
                                                                  self.d_end: d_end,
                                                                  self.q_end: q_end,
                                                                  self.y: y, 
+                                                                 self.dropout: dropout_rate,
                                                                  }) 
 
                 writer.add_summary(summary_str, counter)
@@ -259,6 +277,7 @@ class AttentiveReader():
                                                              self.d_end: d_end,
                                                              self.q_end: q_end,
                                                              self.y: y, 
+                                                             self.dropout: 1.0,
                                                              })
                         writer.add_summary(validate_sum_str, vcounter)
                         running_acc += accuracy
