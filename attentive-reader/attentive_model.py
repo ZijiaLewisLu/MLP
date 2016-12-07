@@ -200,7 +200,7 @@ class AttentiveReader():
         print(" [*] Writing log to %s" % log_dir )
 
         # Saver and Load
-        self.saver = tf.train.Saver()
+        self.saver = tf.train.Saver(max_to_keep=15)
         if load_path is not None:
             if os.path.isdir(load_path):
                 fname = tf.train.latest_checkpoint(os.path.join(load_path, 'ckpts'))

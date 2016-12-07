@@ -28,7 +28,7 @@ class ML_Attention(object):
         global_step = tf.Variable(0, name='global_step', trainable=False)
 
         self.emb = tf.get_variable(
-            "emb", [vocab_size, embed_size], trainable=(glove and train_glove))
+            "emb", [vocab_size, embed_size], trainable=(not glove or train_glove))
         embed_p = tf.nn.embedding_lookup(
             self.emb, self.passage, name='embed_p')  # N,sN,sL,E
         embed_q = tf.nn.embedding_lookup(
@@ -87,7 +87,7 @@ class ML_Attention(object):
         answer_id = tf.argmax(self.answer, 1)
         self.correct_prediction = tf.equal(prediction, answer_id)
         self.accuracy = tf.reduce_mean(
-            tf.cast(self.correct_prediction, tf.float16))
+            tf.cast(self.correct_prediction, tf.float16), name='accuracy')
 
         if optim == 'Adam':
             self.optim = tf.train.AdamOptimizer(learning_rate)
@@ -97,28 +97,37 @@ class ML_Attention(object):
             raise ValueError(optim)
         self.gvs = self.optim.compute_gradients(self.loss)
         self.train_op = self.optim.apply_gradients(self.gvs, global_step=global_step)
+        self.check_op = tf.add_check_numerics_ops()
+
+        # summary ===========================        
         accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)
         loss_sum = tf.scalar_summary('T_loss', tf.reduce_mean(self.loss))
 
         pv_sum = tf.histogram_summary('Var_prediction', prediction)
         av_sum = tf.histogram_summary('Var_answer', answer_id)
 
-        self.train_summary = tf.merge_summary(
-            [accu_sum, loss_sum, self.embed_sum, pv_sum, av_sum])
+        gv_sum = []
+        for g, v in self.gvs:
+            v_sum = tf.scalar_summary( "I_{}-var/mean".format(v.name), tf.reduce_mean(v) )
+            gv_sum.append(v_sum)
+            if g is not None:
+                g_sum = tf.scalar_summary( "I_{}-grad/mean".format(v.name), tf.reduce_mean(g) )
+                gv_sum.append(g_sum)
 
-        self.check_op = tf.add_check_numerics_ops()
+        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum, gv_sum])
 
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
-        self.validate_summary = tf.merge_summary([Vaccu_sum, Vloss_sum])
+        self.validate_summary = tf.merge_summary([Vaccu_sum, Vloss_sum, pv_sum, av_sum])
 
-        # store para =======================
+        # store param =======================
         self.p_rep = p_rep
         self.q_rep = q_rep
         self.embed_p = embed_p
         self.embed_q = embed_q
         self.prediction = prediction
         self.global_step = global_step
+        self.gv_sum = gv_sum
 
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
         # a[i] = p_rep[i] * W * q_rep

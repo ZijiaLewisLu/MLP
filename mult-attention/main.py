@@ -20,12 +20,11 @@ flags.DEFINE_float("save_every", 500.0, "Eval every step")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
 flags.DEFINE_string("data_dir", "data/squad", "Data")
 flags.DEFINE_string("load_path", None, "The path to old model.")
-flags.DEFINE_boolean("track", False, "whether use glove embedding")
-
+flags.DEFINE_boolean("track", False, "whether to track performance")
 
 flags.DEFINE_integer("epoch", 60, "Epoch to train")
 flags.DEFINE_integer("vocab_size", 60000, "The size of vocabulary")
-flags.DEFINE_integer("batch_size", 32, "The size of batch images")
+flags.DEFINE_integer("batch_size", 128, "The size of batch images")
 flags.DEFINE_integer("embed_size", 300, "Embed size")
 flags.DEFINE_integer("hidden_size", 256, "Hidden dimension")
 flags.DEFINE_float("learning_rate", 3e-4, "Learning rate")
@@ -107,7 +106,6 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
 
     model = Net(FLAGS.batch_size, sN, sL, qL, FLAGS.vocab_size, FLAGS.embed_size, FLAGS.hidden_size,
                 learning_rate=FLAGS.learning_rate,
-                dropout_rate=FLAGS.dropout,
                 l2_rate=FLAGS.l2_rate,
                 optim=FLAGS.optim,
                 attention=FLAGS.atten,
@@ -169,7 +167,7 @@ def main(_):
         track_dir = os.path.join(log_dir, 'track')
         os.makedirs(track_dir)
 
-    counter = 1
+    # counter = 1
     vcounter = 1
     writer = tf.train.SummaryWriter(log_dir, sess.graph)
     start_time = time.time()
@@ -186,8 +184,9 @@ def main(_):
 
         for batch_idx, P, p_len, Q, q_len, A in titer:
 
-            loss, accuracy, _, _, sum_str, score, align = sess.run(
+            gstep, loss, accuracy, _, _, sum_str, score, align = sess.run(
                 [
+                    model.global_step,
                     model.loss,
                     model.accuracy,
                     model.train_op,
@@ -202,12 +201,13 @@ def main(_):
                     # model.p_len: p_len,
                     model.query: Q,
                     # model.q_len: q_len,
-                    model.answer: A
+                    model.answer: A,
+                    model.dropout: FLAGS.dropout,
                 })
             loss = loss.mean()
             running_acc += accuracy
             running_loss += loss
-            writer.add_summary(sum_str, counter)
+            writer.add_summary(sum_str, gstep)
 
             if FLAGS.track:
                 if accuracy > max_acc[0]:
@@ -215,20 +215,20 @@ def main(_):
                 if loss < min_loss[0]:
                     min_loss = [loss, score, align, A]
 
-            if counter % 20 == 0:
+            if gstep % 20 == 0:
                 print "Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f" \
                     % (epoch_idx, batch_idx, tstep, time.time() - start_time, running_loss / 20.0, running_acc / 20.0)
                 sys.stdout.flush()
                 running_loss = 0.0
                 running_acc = 0.0
 
-            if counter % FLAGS.eval_every == 0:
+            if gstep % FLAGS.eval_every == 0:
 
                 if FLAGS.track:
                     mark = str(time.time())
                     base_name = os.path.join(track_dir, mark)
 
-                    tracker.info('Train %d %s' % (counter, mark))
+                    tracker.info('Train %d %s' % (gstep, mark))
                     tracker.info('max_accuracy %.4f' % max_acc[0])
                     tracker.info('min_loss %.4f' % min_loss[0])
                     save_track(max_acc[1:], base_name + "_Tacc")
@@ -251,7 +251,8 @@ def main(_):
                             # model.p_len: p_len,
                             model.query: Q,
                             # model.q_len: q_len,
-                            model.answer: A
+                            model.answer: A,
+                            model.dropout: 1.0,                            
                         })
 
                     loss = loss.mean()
@@ -271,7 +272,7 @@ def main(_):
                 vcounter += int(vstep / 4.0)  # add gap
 
                 if FLAGS.track:
-                    tracker.info('Validate %d %s' % (counter, mark))
+                    tracker.info('Validate %d %s' % (gstep, mark))
                     tracker.info('max_accuracy %.4f' % max_acc[0])
                     tracker.info('min_loss %.4f' % min_loss[0])
                     save_track(max_acc[1:], base_name + "_Vacc")
@@ -279,12 +280,10 @@ def main(_):
                     max_acc = [0, None, None, None]
                     min_loss = [np.inf, None, None, None]
 
-            if counter % FLAGS.save_every == 0:
+            if gstep % FLAGS.save_every == 0:
                 fname = os.path.join(save_dir, 'model')
                 print "  Saving Model..."
-                saver.save(sess, fname, global_step=counter)
-
-            counter += 1
+                saver.save(sess, fname, global_step=gstep)
 
 if __name__ == '__main__':
     tf.app.run()
