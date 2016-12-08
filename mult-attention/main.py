@@ -47,6 +47,7 @@ qL = 15
 stop_id = 2
 val_rate = 0.05
 glove_dir = './data/glove_wiki'
+clip_norm = 1.5
 
 
 def initialize(sess, saver, load_path=None):
@@ -75,16 +76,25 @@ def prepare_data(path, data_size=None, size=3185, val_rate=0.05):
     return train_data, validate_data, vsize
 
 
-def create_log(track_dir):
+def create_logger(track_dir, to_console=True):
     """tracking high accuracy prediction"""
     import logging
     fname = os.path.join(track_dir, 'tracking.log')
     logger = logging.getLogger('tracker')
+
     hdlr = logging.FileHandler(fname)
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr)
+
+    if to_console:
+        stdout = logging.StreamHandler()
+        formatter = logging.Formatter('  %(levelname)s %(message)s')
+        stdout.setFormatter(formatter)
+
+    logger.addHandler(stdout)
     logger.setLevel(logging.DEBUG)
+
     return logger
 
 
@@ -93,6 +103,10 @@ def save_track(data, base_name):
         fname = "%s_%d" % (base_name, i)
         np.save(fname, d)
 
+def norm(x):
+    if not isinstance(x, np.ndarray):
+        x = x.values
+    return np.sqrt((x**2).sum())
 
 def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
     if FLAGS.model == 'bow':
@@ -162,8 +176,8 @@ def main(_):
         json.dump(FLAGS.__flags, f, indent=4)
     print '  Writing log to %s' % log_dir
 
+    tracker = create_logger(log_dir, to_console=True)
     if FLAGS.track:
-        tracker = create_log(log_dir)
         track_dir = os.path.join(log_dir, 'track')
         os.makedirs(track_dir)
 
@@ -176,6 +190,9 @@ def main(_):
     max_acc = [0, None, None, None]
     min_loss = [np.inf, None, None, None]
     print '  Start Training'
+    tracker.info('  So you know I am working:)')
+    sys.stdout.flush()
+    
     for epoch_idx in range(FLAGS.epoch):
         np.random.shuffle(train_data)
         titer = batchIter(FLAGS.batch_size, train_data,
@@ -184,7 +201,7 @@ def main(_):
 
         for batch_idx, P, p_len, Q, q_len, A in titer:
 
-            gstep, loss, accuracy, _, _, sum_str, score, align = sess.run(
+            gstep, loss, accuracy, _, _, sum_str, score, align, origin_gv = sess.run(
                 [
                     model.global_step,
                     model.loss,
@@ -194,7 +211,7 @@ def main(_):
                     model.train_summary,
                     model.score,
                     model.alignment,
-                    # model.gvs
+                    model.origin_gv
                 ],
                 feed_dict={
                     model.passage: P,
@@ -208,6 +225,13 @@ def main(_):
             running_acc += accuracy
             running_loss += loss
             writer.add_summary(sum_str, gstep)
+
+
+            # gradient norm check =============================
+            for i, (g, v) in enumerate(origin_gv):
+                nm = norm(g)
+                if nm > clip_norm:
+                    tracker.warning('%s, gradient norm: %f, global_step:%d'%(model.origin_gv[i][1].name, nm, gstep))
 
             if FLAGS.track:
                 if accuracy > max_acc[0]:

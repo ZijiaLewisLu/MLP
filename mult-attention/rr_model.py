@@ -11,7 +11,8 @@ class ML_Attention(object):
                  optim='Adam',
                  attention='bilinear',
                  glove=False,
-                 train_glove=False):
+                 train_glove=False,
+                 max_norm=1.5):
         """
         sN: sentence number  10
         sL: sentence length  50
@@ -106,8 +107,8 @@ class ML_Attention(object):
             raise ValueError(optim)
 
         gvs = self.optim.compute_gradients(self.loss)
-        gs, norm = tf.clip_by_global_norm([gv[0] for gv in gvs], 5)
-        self.gvs = [(gs[i], gv[-1]) for i, gv in enumerate(gvs)]
+        with tf.name_scope('clip_norm'):
+            self.gvs = [ ( tf.clip_by_norm(g, max_norm), v ) for g,v in gvs ]
 
         self.train_op = self.optim.apply_gradients(
             self.gvs, global_step=global_step)
@@ -149,6 +150,7 @@ class ML_Attention(object):
         self.prediction = prediction
         self.global_step = global_step
         self.gv_sum = gv_sum
+        self.origin_gv = gvs
 
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
         # a[i] = p_rep[i] * W * q_rep

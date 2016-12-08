@@ -11,7 +11,8 @@ class ML_Attention(object):
                  optim='Adam',
                  attention='bilinear',
                  glove=False,
-                 train_glove=False):
+                 train_glove=False,
+                 max_norm=1.5):
         """
         sN: sentence number 
         sL: sentence length
@@ -58,8 +59,8 @@ class ML_Attention(object):
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
                 sentence, 
                 dtype=tf.float32, 
-                initial_state_fw=final_state_fw, 
-                initial_state_bw=final_state_bw,
+                # initial_state_fw=final_state_fw, 
+                # initial_state_bw=final_state_bw,
                 )
 
         
@@ -78,11 +79,13 @@ class ML_Attention(object):
         self.alignment = tf.nn.softmax(atten, name='alignment')
         self.loss = tf.nn.softmax_cross_entropy_with_logits(
             self.score, self.answer, name='loss')
+        
         if l2_rate > 0:
-            for v in tf.trainable_variables():
-                if v.name.endswith('Matrix:0') or v.name.startswith('W'):
-                    self.loss += l2_rate * \
-                        tf.nn.l2_loss(v, name="%s-l2loss" % v.name[:-2])
+            with tf.name_scope('l2_reg'):
+                for v in tf.trainable_variables():
+                    if v.name.endswith('Matrix:0') or v.name.startswith('W'):
+                        self.loss += l2_rate * \
+                            tf.nn.l2_loss(v, name="%s-l2loss" % v.name[:-2])
 
         prediction = tf.argmax(self.score, 1)
         answer_id = tf.argmax(self.answer, 1)
@@ -94,17 +97,16 @@ class ML_Attention(object):
             self.optim = tf.train.AdamOptimizer(learning_rate)
         elif optim == 'SGD':
             self.optim = tf.train.GradientDescentOptimizer(learning_rate)
+        elif optim == 'RMS':
+            self.optim = tf.train.RMSPropOptimizer(learning_rate)
         else:
             raise ValueError(optim)
         
         gvs = self.optim.compute_gradients(self.loss)
-        self.gvs = []
-        gs = [ gv[0] for gv in gvs ]
-        gs, norm = tf.clip_by_global_norm(gs, 5)
+        with tf.name_scope('clip_norm'):
+            self.gvs = [ ( tf.clip_by_norm(g, max_norm), v ) for g,v in gvs ]
         
         # import ipdb; ipdb.set_trace()
-        for i, gv in enumerate(gvs):        
-            self.gvs.append( (gs[i], gv[-1]) )
 
         self.train_op = self.optim.apply_gradients(self.gvs, global_step=global_step, name='train_op')
         self.check_op = tf.add_check_numerics_ops()
@@ -145,6 +147,7 @@ class ML_Attention(object):
         self.prediction = prediction
         self.global_step = global_step
         self.gv_sum = gv_sum
+        self.origin_gv = gvs
 
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
         # a[i] = p_rep[i] * W * q_rep
