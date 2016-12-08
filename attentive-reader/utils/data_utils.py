@@ -28,26 +28,33 @@ import json
 import time
 from tqdm import *
 from glob import glob
-from nltk.tokenize import RegexpTokenizer
+# from nltk.tokenize import RegexpTokenizer
 import numpy as np
 import random
 from tensorflow.python.platform import gfile
 
+from nltk import TreebankWordTokenizer
+from string import punctuation
+_tokenrize = TreebankWordTokenizer().tokenize
+
 _WORD_SPLIT = re.compile("([.,!?\"':;)(])")
-_DIGIT_RE = re.compile(r"(^| )\d+")
-word_tokenize = RegexpTokenizer(r'\w+').tokenize
+_DIGIT_RE = re.compile(r"\d")
+# word_tokenize = RegexpTokenizer(r'\w+').tokenize
 
 PAD_ID = 0
 UNK_ID = 1
 STOP_ID = 2
 
-def create_vocab(doc_path, cap=None, save_full_to=None):
+def create_vocab(doc_path, cap=None, save_full_to=None, normalize_digits=False):
     start = time.time()
     fp = codecs.open(doc_path, mode='r')
     f = {}
-    for i, line in enumerate(fp):
+    for i, line in enumerate(tqdm(fp)):
         line = line.lower()
-        X = word_tokenize(line)
+        if normalize_digits:
+            line = re.sub(_DIGIT_RE, "0", line)
+        X = token(line)
+
         for t in X:
             if t in f:
                 f[t] += 1
@@ -55,6 +62,7 @@ def create_vocab(doc_path, cap=None, save_full_to=None):
                 f[t] = 1
 
     print('Calculate Frequency done %4.4f' % (time.time() - start))
+    return f
 
     if save_full_to:
         with open(save_full_to, 'a+') as save:
@@ -78,9 +86,14 @@ def create_vocab(doc_path, cap=None, save_full_to=None):
     print('Vocab Created %4.4f' % (time.time() - start))
     return voca
 
+def token(words):
+    ts = _tokenrize(words)
+    ts = [ x.strip(punctuation) for x in ts ]
+    ts = [ x for x in ts if len(x)>0 ]
+    return ts
 
 def sentence_to_token_ids(sentence, vocabulary,
-                          tokenizer=word_tokenize, normalize_digits=False):
+                          tokenizer=token, normalize_digits=True):
     """Convert a string to list of integers representing token-ids.
 
     For example, a sentence "I have a dog" may become tokenized into
@@ -101,11 +114,12 @@ def sentence_to_token_ids(sentence, vocabulary,
     if not normalize_digits:
         return [vocabulary.get(w, UNK_ID) for w in words]
     # Normalize digits by 0 before looking words up in the vocabulary.
-    return [vocabulary.get(re.sub(_DIGIT_RE, " ", w), UNK_ID) for w in words]
+    return [vocabulary.get(re.sub(_DIGIT_RE, "0", w), UNK_ID) for w in words]
+
 
 
 def data_to_token_ids(data_path, target_path, vocab,
-                      tokenizer=word_tokenize, normalize_digits=False, save=True):
+                      tokenizer=token, normalize_digits=False, save=True):
     """Tokenize data file and turn into token-ids using given vocabulary file.
 
     This function loads data line-by-line from data_path, calls the above

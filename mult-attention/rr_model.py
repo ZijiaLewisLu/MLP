@@ -27,6 +27,8 @@ class ML_Attention(object):
         self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
+        learning_rate = tf.train.polynomial_decay( learning_rate, global_step, 5e3, end_learning_rate=1e-8 )
+        self.lr_sum = tf.scalar_summary('learning_rate', learning_rate) 
 
         self.emb = tf.get_variable(
             "emb", [vocab_size, embed_size], trainable=(not glove))
@@ -135,7 +137,7 @@ class ML_Attention(object):
 
         accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)
         loss_sum = tf.scalar_summary('T_loss', tf.reduce_mean(self.loss))
-        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum, gv_sum, gv_hist_sum])
+        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum, gv_sum, gv_hist_sum, self.lr_sum])
 
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
@@ -151,6 +153,8 @@ class ML_Attention(object):
         self.global_step = global_step
         self.gv_sum = gv_sum
         self.origin_gv = gvs
+        self.learning_rate = learning_rate
+
 
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
         # a[i] = p_rep[i] * W * q_rep

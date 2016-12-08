@@ -95,7 +95,16 @@ def token_sample(data, normalize_digit=True):
     if normalize_digit:
         q = re.sub('\d', '0', q)
     q = token(q)
-    return [sentence, q, asi]
+
+    answers = []
+    for a,s in a_s:
+        a = a.strip().lower()
+        if normalize_digit:
+            a = re.sub('\d', '0', a)
+        a = token(a)
+        answers.append(a)
+
+    return [sentence, q, asi, answers]
 
 # @DeprecationWarning
 # def token_data(origin_file, save_name, normalize_digit=True):
@@ -116,7 +125,7 @@ def token_sample(data, normalize_digit=True):
 
 def create_vocab(data_triple, cap=None):
     X = []
-    for sentence, q, asi in data_triple:
+    for sentence, q, asi, answers in data_triple:
         X.extend(q)
         for s in sentence:
             X.extend(s)
@@ -137,7 +146,6 @@ def create_vocab(data_triple, cap=None):
     # build vocab
     vocab = {k: i for i, k in enumerate(vocab_list)}
     return vocab, f
-
 
 def restruct_glove_words(fname):
     words = []
@@ -166,7 +174,7 @@ def restruct_glove_embedding(fname, vocab, dim=300):
 
 def create_vocab_glove(data_triple, glove_words, cap=None):
     X = []
-    for sentence, q, asi in data_triple:
+    for sentence, q, asi, answers in data_triple:
         X.extend(q)
         for s in sentence:
             X.extend(s)
@@ -203,11 +211,15 @@ def _t2id(tlist, v, unk_id=0):
 def tokens2id(data, vocab, unk="<unk>"):
     unk_id = vocab[unk]
     ids = []
-    for sen, qu, aid in data:
+    for sen, qu, sid, answers in data:
         sen_id = [_t2id(_, vocab, unk_id) for _ in sen]
         qu_id = _t2id(qu, vocab, unk_id)
-        ids.append([sen_id, qu_id, aid])
+        answer_id = [_t2id(_, vocab, unk_id) for _ in answers]
+        ids.append([sen_id, qu_id, sid, answer_id])
     return ids
+
+def reverse(IDS, re_vocab):
+    return " ".join( [ re_vocab.get(_) for _ in IDS] )
 
 # def process_data(data_path='../data/squad', save_path='../data/squad/',
 # cap=None, normalize_digit=True):
@@ -296,16 +308,20 @@ def batchIter(batch_size, data, sN, sL, qL, stop_id=2, add_stop=True):
 
         yield idx, P, p_len, Q, q_len, A
 
-
 def _save(_fname, _data):
     with open(_fname, 'w') as f:
-        for seq, qur, aid in _data:
+        for seq, qur, sid, answer_id in _data:
             N = len(seq)
             f.write("%d\n" % N)
             for s in seq:
                 f.write(" ".join(map(str, s)) + '\n')
             f.write(" ".join(map(str, qur)) + '\n')
-            f.write(" ".join(map(str, aid)) + '\n\n')
+            f.write(" ".join(map(str, sid)) + '\n')
+            A = len(answer_id)
+            f.write('%d\n' % A)
+            for a in answer_id:
+                f.write(" ".join(map(str, a))+'\n')
+            f.write('\n')
 
 
 def _load(_fname):
@@ -319,11 +335,21 @@ def _load(_fname):
                 new = f.readline().strip('\n').split()
                 new = map(int, new)
                 sen.append(new)
+            
             que = f.readline().strip('\n').split()
             que = map(int, que)
-            aid = f.readline().strip('\n').split()
-            aid = map(int, aid)
-            D.append([sen, que, aid])
+            
+            sid = f.readline().strip('\n').split()
+            sid = map(int, sid)
+
+            a = int(f.readline().strip('\n'))
+            answer = []
+            for i in range(a):
+                new = f.readline().strip('\n').split()
+                new = map(int, new)
+                answer.append(new)
+
+            D.append([sen, que, sid, answer])
             f.readline()
             line = f.readline()
     return D
@@ -357,4 +383,5 @@ def _load(_fname):
 
 
 if __name__ == '__main__':
-    process_data(cap=50000)
+    # process_data(cap=50000)
+    pass

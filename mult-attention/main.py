@@ -24,14 +24,15 @@ flags.DEFINE_boolean("track", False, "whether to track performance")
 
 flags.DEFINE_integer("epoch", 60, "Epoch to train")
 flags.DEFINE_integer("vocab_size", 60000, "The size of vocabulary")
-flags.DEFINE_integer("batch_size", 128, "The size of batch images")
+flags.DEFINE_integer("batch_size", 32, "The size of batch images")
 flags.DEFINE_integer("embed_size", 300, "Embed size")
 flags.DEFINE_integer("hidden_size", 256, "Hidden dimension")
-flags.DEFINE_float("learning_rate", 3e-4, "Learning rate")
+flags.DEFINE_float("learning_rate", 3e-5, "Learning rate")
 # flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 # flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
 flags.DEFINE_float("dropout", 0.9, "Dropout rate")
 flags.DEFINE_float("l2_rate", 0.0, "l2 regularization rate")
+flags.DEFINE_float("clip_norm", 5, "l2 regularization rate")
 flags.DEFINE_string("optim", 'Adam', "The optimizer to use")
 flags.DEFINE_string("atten", 'bilinear', "Attention Method")
 flags.DEFINE_string("model", 'bow', "Model")
@@ -123,7 +124,8 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
                 l2_rate=FLAGS.l2_rate,
                 optim=FLAGS.optim,
                 attention=FLAGS.atten,
-                glove=FLAGS.glove
+                glove=FLAGS.glove,
+                max_norm=FLAGS.clip_norm
                 )
 
     return model
@@ -192,7 +194,7 @@ def main(_):
     print '  Start Training'
     tracker.info('  So you know I am working:)')
     sys.stdout.flush()
-    
+
     for epoch_idx in range(FLAGS.epoch):
         np.random.shuffle(train_data)
         titer = batchIter(FLAGS.batch_size, train_data,
@@ -230,7 +232,7 @@ def main(_):
             # gradient norm check =============================
             for i, (g, v) in enumerate(origin_gv):
                 nm = norm(g)
-                if nm > clip_norm:
+                if nm > FLAGS.clip_norm:
                     tracker.warning('%s, gradient norm: %f, global_step:%d'%(model.origin_gv[i][1].name, nm, gstep))
 
             if FLAGS.track:
@@ -245,6 +247,7 @@ def main(_):
                 sys.stdout.flush()
                 running_loss = 0.0
                 running_acc = 0.0
+                sess.run(model.learning_rate)
 
             if (gstep+1) % FLAGS.eval_every == 0:
 
