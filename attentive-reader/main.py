@@ -9,7 +9,7 @@ from attentive_model import AttentiveReader
 flags = tf.app.flags
 flags.DEFINE_integer("epoch", 15, "Epoch to train [40]")
 flags.DEFINE_integer("vocab_size", 50003, "The size of vocabulary [10000]")
-flags.DEFINE_integer("batch_size", 100, "The size of batch images [32]")
+flags.DEFINE_integer("batch_size", 128, "The size of batch images [32]")
 flags.DEFINE_integer("gpu", 2, "the number of gpus to use")
 flags.DEFINE_integer("data_size", None, "Number of files to train on")
 flags.DEFINE_integer("hidden_size", 256, "Hidden dimension for rnn and fully connected layer")

@@ -196,7 +196,7 @@ class AttentiveReader():
         m = tf.tanh(m)
         ms = tf.reduce_sum(m * W_ms, 2, keep_dims=True, name='ms')  # N,T,1
         s = tf.nn.softmax(ms, 1)  # N,T,1
-        self.attention = s
+        self.attention = tf.squeeze(s, -1, name='attention')
         d = tf.pack(d_t, axis=1)  # N,T,2E
         if average:
             r = tf.reduce_sum(s * d, 1, name='r')  # N, 2E
@@ -213,8 +213,8 @@ class AttentiveReader():
             a = tf.matmul(d, W, name='dW')  # N, 2H
             a = tf.reduce_sum(a * u, 1, name='Wq')  # N
             atten.append(a)
-        atten = tf.pack(atten, axis=1, name='attention')  # N, T
-        atten = tf.nn.softmax(atten)
+        atten = tf.pack(atten, axis=1, )  # N, T
+        atten = tf.nn.softmax(atten, name='attention')
         self.attention = atten
         atten = tf.expand_dims(atten, 2)  # N, T, 1
         d = tf.pack(d_t, axis=1)
@@ -236,7 +236,7 @@ class AttentiveReader():
 
         begin = tf.to_int32(tf.round(p - D))
         zero = tf.constant(0, shape=[self.batch_size], dtype=tf.int32)
-        begin = tf.concat(1, [begin, zero])  # N, 2 => [p-D, 0]
+        begin = tf.pack([begin, zero], 1)  # N, 2 => [p-D, 0]
         size = tf.constant([2 * D, -1], dtype=tf.int32)
 
         with tf.name_scope('attention_extract'):
@@ -255,7 +255,8 @@ class AttentiveReader():
         x = np.array(range(-D,D))
         x = x**2 / 2*((D/2.0)**2)
         x = np.exp(-x)
-        gaussian_truncate = tf.constant(x, dtype=tf.float32, name='gaussian_truncate')
+        gaussian_truncate = tf.constant(x, dtype=tf.float32)
+        gaussian_truncate = tf.expand_dims(gaussian_truncate, -1, name='gaussian_truncate')
         r = tf.reduce_sum(unnorm_r * gaussian_truncate, 1, name='r')
         return r
 
