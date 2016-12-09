@@ -15,6 +15,7 @@ flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
 flags.DEFINE_string("load_path", None, "The path to old model. [None]")
 FLAGS = flags.FLAGS
 
+
 if os.path.isdir(FLAGS.load_path):
     with open(os.path.join(FLAGS.load_path, 'Flags.js'), 'r') as f:
         old_flag = json.load(f)

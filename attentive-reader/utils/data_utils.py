@@ -45,6 +45,7 @@ PAD_ID = 0
 UNK_ID = 1
 STOP_ID = 2
 
+
 def create_vocab(doc_path, cap=None, save_full_to=None, normalize_digits=False):
     start = time.time()
     fp = codecs.open(doc_path, mode='r')
@@ -86,11 +87,13 @@ def create_vocab(doc_path, cap=None, save_full_to=None, normalize_digits=False):
     print('Vocab Created %4.4f' % (time.time() - start))
     return voca
 
+
 def token(words):
     ts = _tokenrize(words)
-    ts = [ x.strip(punctuation) for x in ts ]
-    ts = [ x for x in ts if len(x)>0 ]
+    ts = [x.strip(punctuation) for x in ts]
+    ts = [x for x in ts if len(x) > 0]
     return ts
+
 
 def sentence_to_token_ids(sentence, vocabulary,
                           tokenizer=token, normalize_digits=True):
@@ -115,7 +118,6 @@ def sentence_to_token_ids(sentence, vocabulary,
         return [vocabulary.get(w, UNK_ID) for w in words]
     # Normalize digits by 0 before looking words up in the vocabulary.
     return [vocabulary.get(re.sub(_DIGIT_RE, "0", w), UNK_ID) for w in words]
-
 
 
 def data_to_token_ids(data_path, target_path, vocab,
@@ -164,7 +166,8 @@ def data_to_token_ids(data_path, target_path, vocab,
                 with open("%s_%s" % (target_path, len_d + len_q), "w") as tokens_file:
                     tokens_file.writelines(results)
             return results
-        # assert data_file.closed and tokens_file.closed, (data_file.closed , tokens_file.closed)      
+        # assert data_file.closed and tokens_file.closed, (data_file.closed , tokens_file.closed)
+
 
 def get_all_context(dir_name, context_fname):
     context = ""
@@ -187,7 +190,7 @@ def questions_to_token_ids(data_path, vocab_fname):
     with open(vocab_fname, 'r') as f:
         vocab = pk.load(f)
     vocab_size = len(vocab)
-    
+
     for fname in tqdm(glob(os.path.join(data_path, "*.question"))):
         data_to_token_ids(fname, fname + ".ids%s" % vocab_size, vocab)
 
@@ -282,24 +285,27 @@ def data_iter(flist, max_nstep, max_query_step, batch_size=None, vocab_size=2645
         yield s, ds, d_length, qs, q_length, y
 
 
-def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_query_step, split_rate=0.9, size=None, shuffle_data=True):
-    files = glob(os.path.join(data_dir, dataset_name, "questions",
+def fetch_files(data_dir, dataset_name, vocab_size):
+    train = glob(os.path.join(data_dir, dataset_name, "questions",
                               "training", "*.question.ids%s_*" % (vocab_size)))
-    max_idx = len(files)
-    if size is not None and size < max_idx:
-        max_idx = size
-        files = files[:max_idx]
+    validate = glob(os.path.join(data_dir, dataset_name, "questions",
+                                 "validation", "*.question.ids%s_*" % (vocab_size)))
+    return train, validate
 
-    part = int(np.floor(max_idx * split_rate))
-    train = files[:part]
-    validate = files[part:]
+
+def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_query_step, split_rate=0.9, size=None, shuffle_data=True):
+
+    traFl, valFl = fetch_files(data_dir, dataset_name, vocab_size)
+    if size is not None:
+        traFl = traFl[:size]
+
     if shuffle_data:
-        random.shuffle(train)
-        random.shuffle(validate)
+        random.shuffle(traFl)
+        random.shuffle(valFl)
 
-    titer = data_iter(train, max_nstep, max_query_step,
+    titer = data_iter(traFl, max_nstep, max_query_step,
                       batch_size, vocab_size=vocab_size, shuffle_data=False)
-    viter = data_iter(validate, max_nstep, max_query_step,
+    viter = data_iter(valFl, max_nstep, max_query_step,
                       batch_size, vocab_size=vocab_size, shuffle_data=False)
 
     tstep = titer.next()
@@ -307,12 +313,6 @@ def load_dataset(data_dir, dataset_name, vocab_size, batch_size, max_nstep, max_
 
     return titer, tstep, viter, vstep
 
-def fetch_files(data_dir, dataset_name, vocab_size):
-    train = glob(os.path.join(data_dir, dataset_name, "questions",
-                              "training", "*.question.ids%s_*" % (vocab_size)))
-    validate = glob(os.path.join(data_dir, dataset_name, "questions",
-                              "validation", "*.question.ids%s_*" % (vocab_size)))
-    return train, validate
 
 if __name__ == '__main__':
     pass

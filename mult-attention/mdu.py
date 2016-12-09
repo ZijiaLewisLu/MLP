@@ -80,7 +80,7 @@ def filter_data(formated, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
 def token(words):
     ts = _tokenrize(words)
     ts = [ x.strip(punctuation) for x in ts ]
-    ts = [ x for x in ts if len(x)>1 ]
+    ts = [ x for x in ts if len(x)>0 ]
     return ts
 
 def token_sample(data, normalize_digit=True):

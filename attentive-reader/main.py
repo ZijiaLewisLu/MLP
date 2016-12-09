@@ -47,6 +47,7 @@ def main(_):
 
   with tf.Session() as sess:
     model = AttentiveReader(batch_size=FLAGS.batch_size, l2_rate=FLAGS.l2_rate,
+                                    vocab_size=FLAGS.vocab_size, 
                                     momentum=FLAGS.momentum, decay=FLAGS.decay,
                                     size=FLAGS.hidden_size,
                                     use_optimizer=FLAGS.optim,
