@@ -98,7 +98,7 @@ class AttentiveReader():
         elif self.attention == 'bilinear':
             r = self.bilinear_attention(d_t, u)
         elif self.attention == 'local':
-            r = self.local_attention(d_t, u, self.D, attention='bilinear')
+            r = self.local_attention(d_t, u, attention='bilinear')
         else:
             raise ValueError(self.attention)
 
@@ -182,7 +182,7 @@ class AttentiveReader():
 
         # import ipdb; ipdb.set_trace()
 
-    def concat_attention(self, d_t, u, average=True):
+    def concat_attention(self, d_t, u, return_attention=False):
         W_ym = tf.get_variable('W_ym', [2 * self.size, self.size])
         W_um = tf.get_variable('W_um', [2 * self.size, self.size])
         W_ms = tf.get_variable('W_ms', [self.size])
@@ -196,15 +196,15 @@ class AttentiveReader():
         m = tf.tanh(m)
         ms = tf.reduce_sum(m * W_ms, 2, keep_dims=True, name='ms')  # N,T,1
         s = tf.nn.softmax(ms, 1)  # N,T,1
-        self.attention = tf.squeeze(s, -1, name='attention')
+        self.attention = tf.squeeze(s, [-1], name='attention')
         d = tf.pack(d_t, axis=1)  # N,T,2E
-        if average:
-            r = tf.reduce_sum(s * d, 1, name='r')  # N, 2E
+        if return_attention:
+            return self.attention
         else:
-            r = s * d
-        return r
+            r = tf.reduce_sum(s * d, 1, name='r')  # N, 2E
+            return r
 
-    def bilinear_attention(self, d_t, u, average=True):
+    def bilinear_attention(self, d_t, u, return_attention=False):
         W = tf.get_variable('W_bilinear', [2 * self.size, 2 * self.size])
         atten = []
 
@@ -218,25 +218,29 @@ class AttentiveReader():
         self.attention = atten
         atten = tf.expand_dims(atten, 2)  # N, T, 1
         d = tf.pack(d_t, axis=1)
-        if average:
-            r = tf.reduce_sum(atten * d, 1, name='r')
+        if return_attention:
+            return self.attention
         else:
-            r = atten * d
-        return r
+            r = tf.reduce_sum(atten * d, 1, name='r')
+            return r
 
-    def local_attention(self, d_t, u, D, attention='bilinear'):
+    def local_attention(self, d_t, u, attention='bilinear'):
+
         Wp = tf.get_variable('Wp', [2 * self.size, 2 * self.size])
         V = tf.get_variable('V', [2 * self.size])
+        D = self.D
 
-        p = tf.reduce_sum(tf.sigmoid(tf.matmul(u, Wp)) * V, 1)  # N
-        p = self.max_nsteps * p
-        p = tf.minimum(p, D)
-        p = tf.maximum(p, self.max_nsteps - D)
+        tanh = tf.tanh(tf.matmul(u, Wp))
+        p = tf.reduce_sum(tanh*V, 1)  # N
+        p = self.max_nsteps * tf.sigmoid(p)
+        p = tf.to_int32(tf.floor(p))
         self.p = p
 
-        begin = tf.to_int32(tf.round(p - D))
+        pt = tf.minimum(p, D)
+        pt = tf.maximum(pt, self.max_nsteps-D-1)
+        begin_idx = pt-D # N
         zero = tf.constant(0, shape=[self.batch_size], dtype=tf.int32)
-        begin = tf.pack([begin, zero], 1)  # N, 2 => [p-D, 0]
+        begin = tf.pack([begin_idx, zero], 1)  # N, 2 of [p-D, 0]
         size = tf.constant([2 * D, -1], dtype=tf.int32)
 
         with tf.name_scope('attention_extract'):
@@ -250,14 +254,23 @@ class AttentiveReader():
             batches = tf.pack(batches)
 
         if attention == 'bilinear':
-            unnorm_r = self.bilinear_attention(batches, u, average=False) # N, 2D, 2H
+            alignment = self.bilinear_attention(batches, u, return_attention=True) # N, 2D, 2H
+        elif attention == 'concat':
+            alignment = self.concat_attention(batches, u, return_attention=True)
+        else:
+            raise ValueError(attention)
 
-        x = np.array(range(-D,D))
-        x = x**2 / 2*((D/2.0)**2)
-        x = np.exp(-x)
-        gaussian_truncate = tf.constant(x, dtype=tf.float32)
-        gaussian_truncate = tf.expand_dims(gaussian_truncate, -1, name='gaussian_truncate')
-        r = tf.reduce_sum(unnorm_r * gaussian_truncate, 1, name='r')
+        # here we calculate the 'truncated normal distribution'
+        idx = [ begin_idx + i for i in range(2*D) ] # [N]*2D
+        idx = tf.pack(idx, 1) # N, 2D
+
+        denominator = (D/2.0) ** 2.0
+        numerator = -tf.pow(tf.to_float((idx - tf.expand_dims(p, 1))), 2.0)
+        div = tf.truediv(numerator, denominator)
+        e = tf.exp(div)  # result of the truncated normal distribution
+
+        self.attention = tf.mul( alignment, e, name='local_attention') # N, 2D
+        r = tf.reduce_sum( batches*tf.expand_dims(self.attention, -1), 1, name='r')
         return r
 
     def train(self, sess, vocab_size, epoch=25, data_dir="data", dataset_name="cnn",
