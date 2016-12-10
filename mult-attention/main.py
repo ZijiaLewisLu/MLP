@@ -27,6 +27,7 @@ flags.DEFINE_integer("vocab_size", 60000, "The size of vocabulary")
 flags.DEFINE_integer("batch_size", 32, "The size of batch images")
 flags.DEFINE_integer("embed_size", 300, "Embed size")
 flags.DEFINE_integer("hidden_size", 256, "Hidden dimension")
+flags.DEFINE_integer("atten_layer", 3, "Num of attention layer")
 flags.DEFINE_float("learning_rate", 3e-5, "Learning rate")
 # flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 # flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
@@ -34,7 +35,7 @@ flags.DEFINE_float("dropout", 0.9, "Dropout rate")
 flags.DEFINE_float("l2_rate", 0.0, "l2 regularization rate")
 flags.DEFINE_float("clip_norm", 5, "l2 regularization rate")
 flags.DEFINE_string("optim", 'Adam', "The optimizer to use")
-flags.DEFINE_string("atten", 'bilinear', "Attention Method")
+flags.DEFINE_string("atten", 'rnn', "Attention Method")
 flags.DEFINE_string("model", 'bow', "Model")
 flags.DEFINE_boolean("glove", False, "whether use glove embedding")
 
@@ -104,10 +105,12 @@ def save_track(data, base_name):
         fname = "%s_%d" % (base_name, i)
         np.save(fname, d)
 
+
 def norm(x):
     if not isinstance(x, np.ndarray):
         x = x.values
     return np.sqrt((x**2).sum())
+
 
 def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
     if FLAGS.model == 'bow':
@@ -125,7 +128,8 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
                 optim=FLAGS.optim,
                 attention=FLAGS.atten,
                 glove=FLAGS.glove,
-                max_norm=FLAGS.clip_norm
+                max_norm=FLAGS.clip_norm,
+                attention_layer=FLAGS.atten_layer,
                 )
 
     return model
@@ -228,12 +232,12 @@ def main(_):
             running_loss += loss
             writer.add_summary(sum_str, gstep)
 
-
             # gradient norm check =============================
             for i, (g, v) in enumerate(origin_gv):
                 nm = norm(g)
                 if nm > FLAGS.clip_norm:
-                    tracker.warning('%s, gradient norm: %f, global_step:%d'%(model.origin_gv[i][1].name, nm, gstep))
+                    tracker.warning('%s, gradient norm: %f, global_step:%d' % (
+                        model.origin_gv[i][1].name, nm, gstep))
 
             if FLAGS.track:
                 if accuracy > max_acc[0]:
@@ -241,7 +245,7 @@ def main(_):
                 if loss < min_loss[0]:
                     min_loss = [loss, score, align, A]
 
-            if (gstep+1) % 20 == 0:
+            if (gstep + 1) % 20 == 0:
                 print "Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f" \
                     % (epoch_idx, batch_idx, tstep, time.time() - start_time, running_loss / 20.0, running_acc / 20.0)
                 sys.stdout.flush()
@@ -249,7 +253,7 @@ def main(_):
                 running_acc = 0.0
                 sess.run(model.learning_rate)
 
-            if (gstep+1) % FLAGS.eval_every == 0:
+            if (gstep + 1) % FLAGS.eval_every == 0:
 
                 if FLAGS.track:
                     mark = str(time.time())
@@ -279,7 +283,7 @@ def main(_):
                             model.query: Q,
                             # model.q_len: q_len,
                             model.answer: A,
-                            model.dropout: 1.0,                            
+                            model.dropout: 1.0,
                         })
 
                     loss = loss.mean()
@@ -307,7 +311,7 @@ def main(_):
                     max_acc = [0, None, None, None]
                     min_loss = [np.inf, None, None, None]
 
-            if (gstep+1) % FLAGS.save_every == 0:
+            if (gstep + 1) % FLAGS.save_every == 0:
                 fname = os.path.join(save_dir, 'model')
                 print "  Saving Model..."
                 saver.save(sess, fname, global_step=gstep)

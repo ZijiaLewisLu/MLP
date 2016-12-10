@@ -1,5 +1,36 @@
 import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
+# from tensorflow.python.ops.rnn_cell import RNNCell
+
+class AttentionCell(rnn_cell.RNNCell):
+
+    def __init__(self, num_units, query_state, input_size=None, activation='tanh'):
+        self.num_units = num_units
+        self.activation = activation
+        self.query_state = query_state
+        assert query_state.get_shape()[-1].value == num_units
+
+
+
+
+    @property
+    def state_size(self):
+        return self.num_units
+
+    @property
+    def output_size(self):
+        return self.num_units
+
+    def __call__(self, inputs, state, scope=None):
+        Wi = tf.get_variable('W_input',
+                             [self.num_units, self.num_units])
+        Wh = tf.get_variable('W_hidden',
+                             [self.num_units, self.num_units])
+        B  = tf.get_variable('Bias', [self.num_units])
+        i = tf.matmul(inputs, Wi)
+        h = tf.matmul(state, Wh)
+        h = tf.tanh(h + i + self.query_state + B)
+        return h, h
 
 
 class ML_Attention(object):
@@ -10,6 +41,7 @@ class ML_Attention(object):
                  l2_rate=5e-3,
                  optim='Adam',
                  attention='bilinear',
+                 attention_layer=3,
                  glove=False,
                  train_glove=False,
                  max_norm=1.5):
@@ -27,7 +59,8 @@ class ML_Attention(object):
         self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
-        learning_rate = tf.train.exponential_decay( learning_rate, global_step, 700, 0.95)
+        learning_rate = tf.train.exponential_decay(
+            learning_rate, global_step, 700, 0.95)
         self.lr_sum = tf.scalar_summary('learning_rate', learning_rate)
 
         self.emb = tf.get_variable(
@@ -50,7 +83,6 @@ class ML_Attention(object):
             ffinal, _ = tf.split(1, 2, q_rep[-1])
             q_rep = tf.concat(1, [ffinal, bfinal])
 
-
         bow_p = tf.reduce_sum(embed_p, 2)  # N, sN, E
         sentence = tf.unpack(bow_p, axis=1)  # [ N,E ] * sN
         with tf.variable_scope("passage_represent"):
@@ -59,21 +91,22 @@ class ML_Attention(object):
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
                 rnn_cell.LSTMCell(
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
-                sentence, 
-                dtype=tf.float32, 
-                # initial_state_fw=final_state_fw, 
+                sentence,
+                dtype=tf.float32,
+                # initial_state_fw=final_state_fw,
                 # initial_state_bw=final_state_bw,
-                )
+            )
 
-        
-        q_rep = tf.nn.dropout(q_rep, self.dropout)
-        with tf.name_scope('p_rep_dropout'):
+        with tf.name_scope('REP_dropout'):
+            q_rep = tf.nn.dropout(q_rep, self.dropout)
             p_rep = [tf.nn.dropout(p, self.dropout) for p in p_rep]
 
         if attention == 'bilinear':
             atten = self.bilinear_attention(hidden_size, sN, p_rep, q_rep)
         elif attention == 'concat':
             atten = self.concat_attention(hidden_size, sN, p_rep, q_rep)
+        elif attention == 'rnn':
+            atten = self.rnn_attention(hidden_size, sN, p_rep, q_rep, layer=attention_layer)
         else:
             raise ValueError(attention)
 
@@ -81,7 +114,7 @@ class ML_Attention(object):
         self.alignment = tf.nn.softmax(atten, name='alignment')
         self.loss = tf.nn.softmax_cross_entropy_with_logits(
             self.score, self.answer, name='loss')
-        
+
         if l2_rate > 0:
             with tf.name_scope('l2_reg'):
                 for v in tf.trainable_variables():
@@ -103,17 +136,18 @@ class ML_Attention(object):
             self.optim = tf.train.RMSPropOptimizer(learning_rate)
         else:
             raise ValueError(optim)
-        
+
         gvs = self.optim.compute_gradients(self.loss)
         with tf.name_scope('clip_norm'):
-            self.gvs = [ ( tf.clip_by_norm(g, max_norm), v ) for g,v in gvs ]
-        
+            self.gvs = [(tf.clip_by_norm(g, max_norm), v) for g, v in gvs]
+
         # import ipdb; ipdb.set_trace()
 
-        self.train_op = self.optim.apply_gradients(self.gvs, global_step=global_step, name='train_op')
+        self.train_op = self.optim.apply_gradients(
+            self.gvs, global_step=global_step, name='train_op')
         self.check_op = tf.add_check_numerics_ops()
 
-        # summary ===========================        
+        # summary ===========================
         accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)
         loss_sum = tf.scalar_summary('T_loss', tf.reduce_mean(self.loss))
 
@@ -124,22 +158,27 @@ class ML_Attention(object):
         gv_hist_sum = []
 
         for g, v in self.gvs:
-            v_sum = tf.scalar_summary( "I_{}-var/mean".format(v.name), tf.reduce_mean(v) )
-            v_his = tf.histogram_summary( "I_{}-var".format(v.name), v)
-            
+            v_sum = tf.scalar_summary(
+                "I_{}-var/mean".format(v.name), tf.reduce_mean(v))
+            v_his = tf.histogram_summary("I_{}-var".format(v.name), v)
+
             if g is not None:
-                g_sum = tf.scalar_summary( "I_{}-grad/mean".format(v.name), tf.reduce_mean(g) )
-                zero_frac = tf.scalar_summary( "I_{}-grad/sparsity".format(v.name), tf.nn.zero_fraction(g) )
-                g_his = tf.histogram_summary( "I_{}-grad".format(v.name), g)
-        
+                g_sum = tf.scalar_summary(
+                    "I_{}-grad/mean".format(v.name), tf.reduce_mean(g))
+                zero_frac = tf.scalar_summary(
+                    "I_{}-grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
+                g_his = tf.histogram_summary("I_{}-grad".format(v.name), g)
+
             gv_sum += [v_sum, g_sum, zero_frac]
             gv_hist_sum += [v_his, g_his]
 
-        self.train_summary = tf.merge_summary([accu_sum, loss_sum, self.embed_sum, gv_sum, gv_hist_sum, self.lr_sum])
+        self.train_summary = tf.merge_summary(
+            [accu_sum, loss_sum, self.embed_sum, gv_sum, gv_hist_sum, self.lr_sum])
 
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
-        self.validate_summary = tf.merge_summary([Vaccu_sum, Vloss_sum, pv_sum, av_sum])
+        self.validate_summary = tf.merge_summary(
+            [Vaccu_sum, Vloss_sum, pv_sum, av_sum])
 
         # store param =======================
         self.p_rep = p_rep
@@ -178,3 +217,21 @@ class ML_Attention(object):
             atten = tf.pack(atten, axis=1)  # N, sN, 2H
             atten = tf.reduce_sum(atten * Ws, 2, name='attention')  # N, sN
         return atten
+
+    def rnn_attention(self, hidden_size, sN, p_rep, q_rep, layer=3):
+        with tf.variable_scope("rnn_attention") as scope:
+            Wq = tf.get_variable('Wq', [2 * hidden_size, 2 * hidden_size])
+            Ws = tf.get_variable('Ws', [2 * hidden_size])
+            Q = tf.matmul(q_rep, Wq, name='q_Wq')
+
+            atten = []
+            for i in range(sN):
+                if i > 0: scope.reuse_variables()
+                fh, fstate =  tf.nn.rnn(                # N, 2H
+                    AttentionCell(2*hidden_size, Q),
+                    [p_rep[i]]*layer, dtype=tf.float32 )
+                atten.append(fh[-1]) 
+
+            atten = tf.pack(atten, axis=1)  # N, sN, 2H
+            atten = tf.reduce_sum(atten * Ws, 2, name='attention')  # N, sN
+            return atten
