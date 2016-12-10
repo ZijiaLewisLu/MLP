@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
 # from tensorflow.python.ops.rnn_cell import RNNCell
-
+import numpy as np
 
 class AttentionCell(rnn_cell.RNNCell):
 
@@ -50,9 +50,9 @@ class ML_Attention(object):
         """
         self.passage = tf.placeholder(
             tf.int32, [batch_size, sN, sL], name='passage')
-        # self.p_len   = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
+        self.p_len   = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
         self.query = tf.placeholder(tf.int32, [batch_size, qL], name='query')
-        # self.q_len   = tf.placeholder(tf.int32, [batch_size], name='q_len')
+        self.q_len   = tf.placeholder(tf.int32, [batch_size], name='q_len')
         self.answer = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
         self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
 
@@ -81,24 +81,48 @@ class ML_Attention(object):
             ffinal, _ = tf.split(1, 2, q_rep[-1])
             q_rep = tf.concat(1, [ffinal, bfinal])
 
-        bow_p = tf.reduce_sum(embed_p, 2)  # N, sN, E
-        sentence = tf.unpack(bow_p, axis=1)  # [ N,E ] * sN
+        with tf.name_scope('BoW'):
+            p_lens = tf.unpack(self.p_len, axis=1)
+            masks = []
+            for _ in p_lens:
+                # print _.get_shape()
+                m = tf.sequence_mask(_, sL, dtype=tf.float32)
+                masks.append(m)
+            masks = tf.pack(masks, 1) # N, sN, sL
+            masks = tf.expand_dims(masks, -1, name='masks')
+            print masks.get_shape()
+
+            embed_p = embed_p * masks
+            bow_p = tf.reduce_sum(embed_p, 2, name='bow')  # N, sN, E
+
+        # sentence = tf.unpack(bow_p, axis=1)  # [ N,E ] * sN
+        tmp = self.p_len > 0 # N, sN  true at really sentence false at pad [1,1,1,0,0..]
+        tmp = tf.to_int32(tmp)
+        sN_count = tf.reduce_sum(tmp, 1) # N represent number of sentence in the sample
+        sN_mask = tf.sequence_mask(sN_count, sN, dtype=tf.float32, name='attention_mask')
+
+        sentence = bow_p
         with tf.variable_scope("passage_represent"):
-            p_rep, final_state_fw, final_state_bw = tf.nn.bidirectional_rnn(
+            p_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
                 rnn_cell.LSTMCell(
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
                 rnn_cell.LSTMCell(
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
-                sentence,
+                sentence, 
+                sequence_length=sN_count,
                 dtype=tf.float32,
                 # initial_state_fw=final_state_fw,
                 # initial_state_bw=final_state_bw,
             )
+            p_rep = tf.concat(2, p_rep)
 
         with tf.name_scope('REP_dropout'):
             q_rep = tf.nn.dropout(q_rep, self.dropout)
-            p_rep = [tf.nn.dropout(p, self.dropout) for p in p_rep]
-
+            p_rep = tf.nn.dropout(p_rep, self.dropout)
+  
+        print p_rep.get_shape()
+        p_rep = tf.unpack(p_rep, axis=1)
+        print ' using attention %s' % attention
         if attention == 'bilinear':
             atten = self.bilinear_attention(hidden_size, sN, p_rep, q_rep)
         elif attention == 'concat':
@@ -109,11 +133,16 @@ class ML_Attention(object):
         else:
             raise ValueError(attention)
 
+        atten = atten * sN_mask
+
+        # TODO attention histogram_summary
         self.score = atten  # N, sN
         self.alignment = tf.nn.softmax(atten, name='alignment')
+        align_his = tf.histogram_summary('alignment', self.alignment)
+
         self.loss = tf.nn.softmax_cross_entropy_with_logits(
             self.score, self.answer, name='loss')
-
+        # self.loss = tf.mul( self.loss, atten_mask, name='loss
         if l2_rate > 0:
             with tf.name_scope('l2_reg'):
                 for v in tf.trainable_variables():
@@ -144,7 +173,7 @@ class ML_Attention(object):
 
         self.train_op = self.optim.apply_gradients(
             self.gvs, global_step=global_step, name='train_op')
-        self.check_op = tf.add_check_numerics_ops()
+        # self.check_op = tf.add_check_numerics_ops()
 
         # summary ===========================
         accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)
@@ -172,7 +201,7 @@ class ML_Attention(object):
             gv_hist_sum += [v_his, g_his]
 
         self.train_summary = tf.merge_summary(
-            [accu_sum, loss_sum, self.embed_sum, gv_sum, gv_hist_sum, self.lr_sum])
+            [accu_sum, loss_sum, self.embed_sum, gv_sum, gv_hist_sum, self.lr_sum, align_his])
 
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))

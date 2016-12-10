@@ -28,16 +28,16 @@ flags.DEFINE_integer("batch_size", 32, "The size of batch images")
 flags.DEFINE_integer("embed_size", 300, "Embed size")
 flags.DEFINE_integer("hidden_size", 256, "Hidden dimension")
 flags.DEFINE_integer("atten_layer", 3, "Num of attention layer")
-flags.DEFINE_float("learning_rate", 3e-6, "Learning rate")
+flags.DEFINE_float("learning_rate", 3e-4, "Learning rate")
 # flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 # flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
 flags.DEFINE_float("dropout", 0.9, "Dropout rate")
 flags.DEFINE_float("l2_rate", 0.0, "l2 regularization rate")
-flags.DEFINE_float("clip_norm", 1.5, "l2 regularization rate")
+flags.DEFINE_float("clip_norm", 2.5, "l2 regularization rate")
 flags.DEFINE_string("optim", 'Adam', "The optimizer to use")
-flags.DEFINE_string("atten", 'rnn', "Attention Method")
+flags.DEFINE_string("atten", 'concat', "Attention Method")
 flags.DEFINE_string("model", 'bow', "Model")
-flags.DEFINE_string("init", 'xav', "xav, ort, non, ran")
+flags.DEFINE_string("init", 'ort', "xav, ort, non, ran")
 flags.DEFINE_boolean("glove", False, "whether use glove embedding")
 
 
@@ -239,13 +239,13 @@ def main(_):
 
         for batch_idx, P, p_len, Q, q_len, A in titer:
 
-            gstep, loss, accuracy, _, _, sum_str, score, align, origin_gv = sess.run(
+            gstep, loss, accuracy, _, sum_str, score, align, origin_gv = sess.run(
                 [
                     model.global_step,
                     model.loss,
                     model.accuracy,
                     model.train_op,
-                    model.check_op,
+                    # model.check_op,
                     model.train_summary,
                     model.score,
                     model.alignment,
@@ -253,9 +253,9 @@ def main(_):
                 ],
                 feed_dict={
                     model.passage: P,
-                    # model.p_len: p_len,
+                    model.p_len: p_len,
                     model.query: Q,
-                    # model.q_len: q_len,
+                    model.q_len: q_len,
                     model.answer: A,
                     model.dropout: FLAGS.dropout,
                 })
@@ -311,9 +311,9 @@ def main(_):
                         [model.loss, model.accuracy, model.validate_summary],
                         feed_dict={
                             model.passage: P,
-                            # model.p_len: p_len,
+                            model.p_len: p_len,
                             model.query: Q,
-                            # model.q_len: q_len,
+                            model.q_len: q_len,
                             model.answer: A,
                             model.dropout: 1.0,
                         })

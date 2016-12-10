@@ -182,6 +182,7 @@ class AttentiveReader():
             raise ValueError(cell_type)
 
         if use_bidirection:            
+            # (TODO) change
             h_t, final_state, = tf.nn.bidirectional_dynamic_rnn(
                 cell(self.size),
                 cell(self.size),
