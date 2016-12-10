@@ -60,7 +60,7 @@ class ML_Attention(object):
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
         learning_rate = tf.train.exponential_decay(
-            learning_rate, global_step, 700, 0.95)
+            learning_rate, global_step, 700, 0.85)
         self.lr_sum = tf.scalar_summary('learning_rate', learning_rate)
 
         self.emb = tf.get_variable(

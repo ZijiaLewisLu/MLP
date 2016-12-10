@@ -28,12 +28,12 @@ flags.DEFINE_integer("batch_size", 32, "The size of batch images")
 flags.DEFINE_integer("embed_size", 300, "Embed size")
 flags.DEFINE_integer("hidden_size", 256, "Hidden dimension")
 flags.DEFINE_integer("atten_layer", 3, "Num of attention layer")
-flags.DEFINE_float("learning_rate", 3e-5, "Learning rate")
+flags.DEFINE_float("learning_rate", 3e-6, "Learning rate")
 # flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 # flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
 flags.DEFINE_float("dropout", 0.9, "Dropout rate")
 flags.DEFINE_float("l2_rate", 0.0, "l2 regularization rate")
-flags.DEFINE_float("clip_norm", 5, "l2 regularization rate")
+flags.DEFINE_float("clip_norm", 1.5, "l2 regularization rate")
 flags.DEFINE_string("optim", 'Adam', "The optimizer to use")
 flags.DEFINE_string("atten", 'rnn', "Attention Method")
 flags.DEFINE_string("model", 'bow', "Model")
@@ -49,7 +49,22 @@ qL = 15
 stop_id = 2
 val_rate = 0.05
 glove_dir = './data/glove_wiki'
-clip_norm = 1.5
+
+
+def orthogonal_initializer(scale=1.1):
+    ''' From Lasagne and Keras. Reference: Saxe et al., http://arxiv.org/abs/1312.6120
+    '''
+    print('Warning -- You have opted to use the orthogonal_initializer function')
+    def _initializer(shape, dtype=tf.float32):
+        flat_shape = (shape[0], np.prod(shape[1:]))
+        a = np.random.normal(0.0, 1.0, flat_shape)
+        u, _, v = np.linalg.svd(a, full_matrices=False)
+        # pick the one with the correct shape
+        q = u if u.shape == flat_shape else v
+        q = q.reshape(shape)  # this needs to be corrected to float32
+        # print('you have initialized one orthogonal matrix.')
+        return tf.constant(scale * q[:shape[0], :shape[1]], dtype=tf.float32)
+    return _initializer
 
 
 def initialize(sess, saver, load_path=None):
@@ -122,15 +137,19 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
     else:
         raise ValueError(FLAGS.model)
 
-    model = Net(FLAGS.batch_size, sN, sL, qL, FLAGS.vocab_size, FLAGS.embed_size, FLAGS.hidden_size,
-                learning_rate=FLAGS.learning_rate,
-                l2_rate=FLAGS.l2_rate,
-                optim=FLAGS.optim,
-                attention=FLAGS.atten,
-                glove=FLAGS.glove,
-                max_norm=FLAGS.clip_norm,
-                attention_layer=FLAGS.atten_layer,
-                )
+    with tf.variable_scope('model', 
+        # initializer=tf.truncated_normal_initializer(stddev=0.01),
+        initializer=orthogonal_initializer(),
+        ):
+        model = Net(FLAGS.batch_size, sN, sL, qL, FLAGS.vocab_size, FLAGS.embed_size, FLAGS.hidden_size,
+                    learning_rate=FLAGS.learning_rate,
+                    l2_rate=FLAGS.l2_rate,
+                    optim=FLAGS.optim,
+                    attention=FLAGS.atten,
+                    glove=FLAGS.glove,
+                    max_norm=FLAGS.clip_norm,
+                    attention_layer=FLAGS.atten_layer,
+                    )
 
     return model
 

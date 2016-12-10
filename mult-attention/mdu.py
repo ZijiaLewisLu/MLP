@@ -298,11 +298,11 @@ def batchIter(batch_size, data, sN, sL, qL, stop_id=2, add_stop=True):
         q_len.fill(0)
 
         for i, sample in enumerate(batch):
-            sens, q, aid = sample
+            sens, q, sid, answer = sample
             for j, s in enumerate(sens[:sN]):
                 P[i, j], p_len[i, j] = _transform(s, sL, stop_id, add_end=add_stop)
             Q[i], q_len[i] = _transform(q, qL, stop_id, add_end=add_stop)
-            for a in aid:
+            for a in sid:
                 if a < sN:
                     A[i][a] = 1
 
