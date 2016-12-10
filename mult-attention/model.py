@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
 # from tensorflow.python.ops.rnn_cell import RNNCell
-import numpy as np
+# import numpy as np
 
 class AttentionCell(rnn_cell.RNNCell):
 
@@ -58,7 +58,7 @@ class ML_Attention(object):
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
         learning_rate = tf.train.exponential_decay(
-            learning_rate, global_step, 700, 0.95)
+            learning_rate, global_step, 1000, 0.95)
         self.lr_sum = tf.scalar_summary('learning_rate', learning_rate)
 
         self.emb = tf.get_variable(
@@ -69,39 +69,60 @@ class ML_Attention(object):
             self.emb, self.query, name='embed_q')  # N,qL,E
         self.embed_sum = tf.histogram_summary("embed", self.emb)
 
-        query_token = tf.unpack(embed_q, axis=1)
+        # query_token = tf.unpack(embed_q, axis=1)
+        query_token = embed_q
         with tf.variable_scope("query_represent"):
-            q_rep, final_state_fw, final_state_bw = tf.nn.bidirectional_rnn(
+            q_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
                 rnn_cell.LSTMCell(
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
                 rnn_cell.LSTMCell(
                     hidden_size, forget_bias=0.0, state_is_tuple=True),
-                query_token, dtype=tf.float32)
-            _, bfinal = tf.split(1, 2, q_rep[0])
-            ffinal, _ = tf.split(1, 2, q_rep[-1])
+                query_token, 
+                sequence_length=self.q_len,
+                dtype=tf.float32)
+
+            ffinal = tf.reduce_max(q_rep[0], [1])
+            bfinal = tf.reduce_max(q_rep[-1], [1])
+            # _, bfinal = tf.split(1, 2, q_rep[0])
+            # ffinal, _ = tf.split(1, 2, q_rep[-1])
+            # fw = tf.expand_dims(q_rep[0], -1) # N, qL, H, 1
+            # bw = tf.expand_dims(q_rep[-1], -1)
+            # print fw.get_shape()
+            # print bw.get_shape()
+            # ffinal = tf.nn.max_pool( fw, [1,qL,1,1], [1,1,1,1], 'VALID', name='ffinal') # N, qL, 1,
+            # bfinal = tf.nn.max_pool( bw, [1,qL,1,1], [1,1,1,1], 'VALID', name='bfinal')
+            # print ffinal.get_shape()
+            # ffinal = tf.squeeze(ffinal, squeeze_dims=[1,3])
+            # bfinal = tf.squeeze(bfinal, squeeze_dims=[1,3])
+            print ffinal.get_shape()
+            # assert False
             q_rep = tf.concat(1, [ffinal, bfinal])
 
         with tf.name_scope('BoW'):
             p_lens = tf.unpack(self.p_len, axis=1)
             masks = []
             for _ in p_lens:
-                # print _.get_shape()
                 m = tf.sequence_mask(_, sL, dtype=tf.float32)
                 masks.append(m)
             masks = tf.pack(masks, 1) # N, sN, sL
+            self.mask_print = tf.Print(masks, [masks], message='bow mask', first_n=50, name='printBowMask')
             masks = tf.expand_dims(masks, -1, name='masks')
             print masks.get_shape()
 
             embed_p = embed_p * masks
             bow_p = tf.reduce_sum(embed_p, 2, name='bow')  # N, sN, E
 
-        # sentence = tf.unpack(bow_p, axis=1)  # [ N,E ] * sN
-        tmp = self.p_len > 0 # N, sN  true at really sentence false at pad [1,1,1,0,0..]
-        tmp = tf.to_int32(tmp)
-        sN_count = tf.reduce_sum(tmp, 1) # N represent number of sentence in the sample
-        sN_mask = tf.sequence_mask(sN_count, sN, dtype=tf.float32, name='attention_mask')
+        sN_mask = tf.to_float(self.p_len > 0, name='sN_mask') # N, sN
+        sN_count = tf.reduce_sum( sN_mask, 1 )
+        print sN_count.get_shape()
+        print sN_mask.get_shape()
+        self.sN_mask = sN_mask
+        self.sN_count = sN_count
+        sN_count = tf.to_int64(sN_count, name='sN_count')
+        self.sn_c_print = tf.Print(sN_count, [sN_count, sN_mask], message='sn count, sn mask', first_n=50)
+        # assert False
 
-        sentence = bow_p
+        sentence = bow_p # N, sN, 2H
         with tf.variable_scope("passage_represent"):
             p_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
                 rnn_cell.LSTMCell(
@@ -133,9 +154,9 @@ class ML_Attention(object):
         else:
             raise ValueError(attention)
 
-        atten = atten * sN_mask
+        atten = atten - tf.reduce_min( atten, [1], keep_dims=True )
+        atten = tf.mul(atten , sN_mask, name='unnormalized_attention')
 
-        # TODO attention histogram_summary
         self.score = atten  # N, sN
         self.alignment = tf.nn.softmax(atten, name='alignment')
         align_his = tf.histogram_summary('alignment', self.alignment)
@@ -152,7 +173,10 @@ class ML_Attention(object):
 
         prediction = tf.argmax(self.score, 1)
         answer_id = tf.argmax(self.answer, 1)
-        self.correct_prediction = tf.equal(prediction, answer_id)
+        self.correct_prediction = tf.equal(prediction, answer_id) # N
+        # self.correct_prediction = tf.logical_and( self.correct_prediction, self.p_len > 0 )
+        # self.correct_prediction = tf.to_float( self.correct_prediction )
+        # self.accuracy = tf.div( tf.reduce_sum( self.correct_prediction, 1 ), tf.to_float(self.p_len), name='accuracy' )
         self.accuracy = tf.reduce_mean(
             tf.cast(self.correct_prediction, tf.float16), name='accuracy')
 
@@ -173,7 +197,7 @@ class ML_Attention(object):
 
         self.train_op = self.optim.apply_gradients(
             self.gvs, global_step=global_step, name='train_op')
-        # self.check_op = tf.add_check_numerics_ops()
+        self.check_op = tf.add_check_numerics_ops()
 
         # summary ===========================
         accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)

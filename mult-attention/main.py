@@ -166,9 +166,42 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
 
     return model
 
+# def check_setting(flags):
+#     pp.pprint(flags.FLAGS.__flags)
+#     go = raw_input('Do you want to go with these setting? ')
+#     while go not in ['Yes', 'y', 'Y', 'yes']:
+#         if go == 'pp':
+#             pp.pprint(flags.FLAGS.__flags)
+#         elif go in ['No', 'n', 'N', 'no']:
+#             exit(2)
+#         else:
+#             go = go.split(' ')
+#             if len(go) % 2 != 0:
+#                 print ' Not understood, try again\n'
+#                 continue
+            
+#             i = 0
+#             while i < len(go):
+#                 k = go[i]
+#                 v = go[i+1]
+#                 if k in flags.FLAGS.__flags:
+#                     flags.FLAGS.__flags[k] = v
+#                 else:
+#                     print '%s is a wrong param'
+
+# def input_with_timeout(prompt, timeout=30.0):
+#     import thread
+#     from threading
+#     print prompt
+#     timer = threading.Timer(timeout, thread.interrupt_main)
+#     astring
 
 def main(_):
     pp.pprint(flags.FLAGS.__flags)
+
+    go = raw_input('Do you want to go with these setting? ')
+    if go not in ['Yes', 'y', 'Y', 'yes']:
+        exit(2)
 
     if FLAGS.gpu is not None:
         # gpu_list  = define_gpu(FLAGS.gpu)
@@ -239,17 +272,22 @@ def main(_):
 
         for batch_idx, P, p_len, Q, q_len, A in titer:
 
-            gstep, loss, accuracy, _, sum_str, score, align, origin_gv = sess.run(
+            rslt = sess.run(
                 [
                     model.global_step,
                     model.loss,
                     model.accuracy,
                     model.train_op,
-                    # model.check_op,
-                    model.train_summary,
+                    model.train_summary, 
+
                     model.score,
                     model.alignment,
-                    model.origin_gv
+                    model.origin_gv,
+
+                    # model.check_op,
+                    # model.mask_print,
+                    # model.sn_c_print,
+
                 ],
                 feed_dict={
                     model.passage: P,
@@ -259,6 +297,13 @@ def main(_):
                     model.answer: A,
                     model.dropout: FLAGS.dropout,
                 })
+
+            gstep, loss, accuracy, _, sum_str = rslt[:5]
+            rslt = rslt[5:]
+
+            score, align, origin_gv = rslt[:3]
+            rslt = rslt[3:]
+
             loss = loss.mean()
             running_acc += accuracy
             running_loss += loss
