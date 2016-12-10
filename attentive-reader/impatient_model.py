@@ -5,8 +5,7 @@ import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
 from utils import load_dataset, fetch_files, data_iter
 
-class AttentiveReader():
-    """Attentive Reader."""
+class ImpatientReader():
 
     def __init__(self, vocab_size=50003, batch_size=32,
                  learning_rate=1e-4, momentum=0.9, decay=0.95, l2_rate=1e-4,
@@ -88,17 +87,19 @@ class AttentiveReader():
         self.u = u
 
         # attention
-        if self.attention == 'concat':
-            r = self.concat_attention(d_t, u)
-        elif self.attention == 'bilinear':
-            r = self.bilinear_attention(d_t, u)
-        elif self.attention == 'local':
-            # r = self.local_attention(d_t, u, attention='concat')
-            from attention import local_attention
-            content_func = lambda x, y : self.concat_attention(x,y, return_attention=True)
-            r, atten_hist = local_attention(u, d_t, window_size=self.D, content_function=content_func)
-        else:
-            raise ValueError(self.attention)
+        def attention_function():
+
+            if self.attention == 'concat':
+                return self.concat_attention
+            elif self.attention == 'bilinear':
+                return self.bilinear_attention
+            elif self.attention == 'local':
+                # r = self.local_attention(d_t, u, attention='concat')
+                from attention import local_attention
+                content_func = lambda x, y : self.concat_attention(x,y, return_attention=True)
+                r, atten_hist = local_attention(u, d_t, window_size=self.D, content_function=content_func)
+            else:
+                raise ValueError(self.attention)
 
         # predict
         W_rg = tf.get_variable("W_rg", [2 * self.size, self.size])
@@ -162,10 +163,7 @@ class AttentiveReader():
         self.vname = [v.name for g, v in self.grad_and_var]
         self.vars = [v for g, v in self.grad_and_var]
         self.gras = [g for g, v in self.grad_and_var]
-        if self.attention == 'local':
-            self.train_sum = tf.merge_summary([loss_sum, acc_sum, atten_hist])
-        else:
-            self.train_sum = tf.merge_summary([loss_sum, acc_sum])            
+        self.train_sum = tf.merge_summary([loss_sum, acc_sum, atten_hist])
 
         # validation sum
         v_loss_sum = tf.scalar_summary("V_loss", tf.reduce_mean(self.loss))
