@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
 # from tensorflow.python.ops.rnn_cell import RNNCell
 
+
 class AttentionCell(rnn_cell.RNNCell):
 
     def __init__(self, num_units, query_state, input_size=None, activation='tanh'):
@@ -9,9 +10,6 @@ class AttentionCell(rnn_cell.RNNCell):
         self.activation = activation
         self.query_state = query_state
         assert query_state.get_shape()[-1].value == num_units
-
-
-
 
     @property
     def state_size(self):
@@ -26,7 +24,7 @@ class AttentionCell(rnn_cell.RNNCell):
                              [self.num_units, self.num_units])
         Wh = tf.get_variable('W_hidden',
                              [self.num_units, self.num_units])
-        B  = tf.get_variable('Bias', [self.num_units])
+        B = tf.get_variable('Bias', [self.num_units])
         i = tf.matmul(inputs, Wi)
         h = tf.matmul(state, Wh)
         h = tf.tanh(h + i + self.query_state + B)
@@ -60,7 +58,7 @@ class ML_Attention(object):
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
         learning_rate = tf.train.exponential_decay(
-            learning_rate, global_step, 700, 0.85)
+            learning_rate, global_step, 700, 0.95)
         self.lr_sum = tf.scalar_summary('learning_rate', learning_rate)
 
         self.emb = tf.get_variable(
@@ -106,7 +104,8 @@ class ML_Attention(object):
         elif attention == 'concat':
             atten = self.concat_attention(hidden_size, sN, p_rep, q_rep)
         elif attention == 'rnn':
-            atten = self.rnn_attention(hidden_size, sN, p_rep, q_rep, layer=attention_layer)
+            atten = self.rnn_attention(
+                hidden_size, sN, p_rep, q_rep, layer=attention_layer)
         else:
             raise ValueError(attention)
 
@@ -226,11 +225,12 @@ class ML_Attention(object):
 
             atten = []
             for i in range(sN):
-                if i > 0: scope.reuse_variables()
-                fh, fstate =  tf.nn.rnn(                # N, 2H
-                    AttentionCell(2*hidden_size, Q),
-                    [p_rep[i]]*layer, dtype=tf.float32 )
-                atten.append(fh[-1]) 
+                if i > 0:
+                    scope.reuse_variables()
+                fh, fstate = tf.nn.rnn(                # N, 2H
+                    AttentionCell(2 * hidden_size, Q),
+                    [p_rep[i]] * layer, dtype=tf.float32)
+                atten.append(fh[-1])
 
             atten = tf.pack(atten, axis=1)  # N, sN, 2H
             atten = tf.reduce_sum(atten * Ws, 2, name='attention')  # N, sN

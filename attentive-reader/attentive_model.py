@@ -63,14 +63,20 @@ class AttentiveReader():
         with tf.variable_scope("document_represent"):
             # d_t: N, T, Hidden
             d_t, d_final_state = self.rnn(embed_d, self.d_end, use_bidirection=self.bidirection)
+            d_t = tf.concat(2, d_t)
+            print d_t.get_shape()
             d_t = tf.nn.dropout(d_t, keep_prob=self.dropout)
 
         with tf.variable_scope("query_represent"):
-            q_t, q_final_state, = self.rnn(embed_q, self.q_end, use_bidirection=self.bidirection)
+            q_t, q_final_state = self.rnn(embed_q, self.q_end, use_bidirection=self.bidirection)
+
+            print type(q_t)
 
             if self.bidirection:
                 q_f = tf.unpack(q_t[0], axis=1)
                 q_b = tf.unpack(q_t[-1], axis=1)
+                print q_f[-1].get_shape()
+                print q_b[0].get_shape()
                 u = tf.concat(1, [q_f[-1], q_b[0]], name='u')  # N, Hidden*2
             else:
                 u = tf.unpack(q_t, axis=1)[-1]
@@ -87,7 +93,10 @@ class AttentiveReader():
         elif self.attention == 'bilinear':
             r = self.bilinear_attention(d_t, u)
         elif self.attention == 'local':
-            r = self.local_attention(d_t, u, attention='concat')
+            # r = self.local_attention(d_t, u, attention='concat')
+            from attention import local_attention
+            content_func = lambda x, y : self.concat_attention(x,y, return_attention=True)
+            r, atten_hist = local_attention(u, d_t, window_size=self.D, content_function=content_func)
         else:
             raise ValueError(self.attention)
 
@@ -153,7 +162,7 @@ class AttentiveReader():
         self.vname = [v.name for g, v in self.grad_and_var]
         self.vars = [v for g, v in self.grad_and_var]
         self.gras = [g for g, v in self.grad_and_var]
-        self.train_sum = tf.merge_summary([loss_sum, acc_sum])
+        self.train_sum = tf.merge_summary([loss_sum, acc_sum, atten_hist])
 
         # validation sum
         v_loss_sum = tf.scalar_summary("V_loss", tf.reduce_mean(self.loss))
@@ -172,20 +181,19 @@ class AttentiveReader():
         else:
             raise ValueError(cell_type)
 
-        if use_bidirection:
-
+        if use_bidirection:            
             h_t, final_state, = tf.nn.bidirectional_dynamic_rnn(
                 cell(self.size),
                 cell(self.size),
                 input_tensor,
                 sequence_length=seq_length, dtype=dtype)
-            h_t = tf.concat(2, h_t)
 
         else:
             h_t, final_state = tf.nn.dynamic_rnn(
                 cell(2 * self.size),
                 input_tensor,
                 sequence_length=seq_length, dtype=dtype)
+
         return h_t, final_state
 
     def get_optimizer(self):

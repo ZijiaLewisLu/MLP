@@ -37,6 +37,7 @@ flags.DEFINE_float("clip_norm", 1.5, "l2 regularization rate")
 flags.DEFINE_string("optim", 'Adam', "The optimizer to use")
 flags.DEFINE_string("atten", 'rnn', "Attention Method")
 flags.DEFINE_string("model", 'bow', "Model")
+flags.DEFINE_string("init", 'xav', "xav, ort, non, ran")
 flags.DEFINE_boolean("glove", False, "whether use glove embedding")
 
 
@@ -54,9 +55,13 @@ glove_dir = './data/glove_wiki'
 def orthogonal_initializer(scale=1.1):
     ''' From Lasagne and Keras. Reference: Saxe et al., http://arxiv.org/abs/1312.6120
     '''
-    print('Warning -- You have opted to use the orthogonal_initializer function')
-    def _initializer(shape, dtype=tf.float32):
-        flat_shape = (shape[0], np.prod(shape[1:]))
+    print 'Warning -- You have opted to use the orthogonal_initializer function'
+    def _initializer(shape, dtype=tf.float32, partition_info=None):
+        if len(shape) == 1:
+            a = np.random.normal(0.0, 1.0, shape[0])
+            return tf.constant(scale * a, dtype=tf.float32)
+
+        flat_shape = (shape[0], np.prod(shape[1:], dtype=np.int32))
         a = np.random.normal(0.0, 1.0, flat_shape)
         u, _, v = np.linalg.svd(a, full_matrices=False)
         # pick the one with the correct shape
@@ -128,6 +133,7 @@ def norm(x):
 
 
 def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
+    
     if FLAGS.model == 'bow':
         from model import ML_Attention as Net
     elif FLAGS.model == 'rr':
@@ -137,10 +143,17 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
     else:
         raise ValueError(FLAGS.model)
 
-    with tf.variable_scope('model', 
-        # initializer=tf.truncated_normal_initializer(stddev=0.01),
-        initializer=orthogonal_initializer(),
-        ):
+    if FLAGS.init == 'non':
+        initializer = None
+    elif FLAGS.init == 'xav':
+        initializer = tf.contrib.layers.xavier_initializer()
+    elif FLAGS.init == 'ran':
+        initializer=tf.truncated_normal_initializer(stddev=0.01)
+    elif FLAGS.init == 'ort':
+        initializer=orthogonal_initializer()
+
+    with tf.variable_scope('model', initializer=initializer,):
+
         model = Net(FLAGS.batch_size, sN, sL, qL, FLAGS.vocab_size, FLAGS.embed_size, FLAGS.hidden_size,
                     learning_rate=FLAGS.learning_rate,
                     l2_rate=FLAGS.l2_rate,
