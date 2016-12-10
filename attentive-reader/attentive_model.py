@@ -5,7 +5,6 @@ import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
 from utils import load_dataset, fetch_files, data_iter
 
-
 class AttentiveReader():
     """Attentive Reader."""
 
@@ -14,10 +13,10 @@ class AttentiveReader():
                  size=256,
                  max_nsteps=1000,
                  max_query_length=20,
-                 # dropout_rate=0.9,
                  use_optimizer='RMS',
                  activation='tanh',
                  attention='bilinear',
+                 bidirection=True,
                  D=25,
                  ):
 
@@ -34,6 +33,7 @@ class AttentiveReader():
         self.use_optimizer = use_optimizer
         self.activation = activation
         self.attention = attention
+        self.bidirection = bidirection
         self.D = D
 
         self.saver = None
@@ -52,42 +52,31 @@ class AttentiveReader():
 
         # Embeding
         self.emb = tf.get_variable("emb", [self.vocab_size, self.size])
-        # shape: batch_size, sentence_length, embedding_size
-        embed_d = tf.nn.embedding_lookup(
-            self.emb, self.document, name='embed_d')
-        # shape: batch_size, sentence_length, embedding_size
+        embed_d = tf.nn.embedding_lookup(self.emb, self.document, name='embed_d')
         embed_q = tf.nn.embedding_lookup(self.emb, self.query, name='embed_q')
         embed_sum = tf.histogram_summary("embed", self.emb)
 
-        embed_d = tf.nn.dropout(embed_d, keep_prob=self.dropout)
-        embed_q = tf.nn.dropout(embed_q, keep_prob=self.dropout)
+        # embed_d = tf.nn.dropout(embed_d, keep_prob=self.dropout)
+        # embed_q = tf.nn.dropout(embed_q, keep_prob=self.dropout)
 
         # representation
         with tf.variable_scope("document_represent"):
             # d_t: N, T, Hidden
-            d_t, d_final_state, = tf.nn.bidirectional_dynamic_rnn(
-                rnn_cell.BasicLSTMCell(
-                    self.size, forget_bias=0.0, state_is_tuple=True),
-                rnn_cell.BasicLSTMCell(
-                    self.size, forget_bias=0.0, state_is_tuple=True),
-                embed_d,
-                sequence_length=self.d_end, dtype=tf.float32)
-            d_t = tf.concat(2, d_t)
+            d_t, d_final_state = self.rnn(embed_d, self.d_end, use_bidirection=self.bidirection)
             d_t = tf.nn.dropout(d_t, keep_prob=self.dropout)
-            # d_t = tf.unpack(d_t, axis=1)
 
         with tf.variable_scope("query_represent"):
-            q_t, q_final_state, = tf.nn.bidirectional_dynamic_rnn(
-                rnn_cell.BasicLSTMCell(
-                    self.size, forget_bias=0.0, state_is_tuple=True),
-                rnn_cell.BasicLSTMCell(
-                    self.size, forget_bias=0.0, state_is_tuple=True),
-                embed_q,
-                sequence_length=self.q_end, dtype=tf.float32)
-            q_f = tf.unpack(q_t[0], axis=1)
-            q_b = tf.unpack(q_t[-1], axis=1)
-            u = tf.concat(1, [q_f[-1], q_b[0]], name='u')  # N, Hidden*2
+            q_t, q_final_state, = self.rnn(embed_q, self.q_end, use_bidirection=self.bidirection)
+
+            if self.bidirection:
+                q_f = tf.unpack(q_t[0], axis=1)
+                q_b = tf.unpack(q_t[-1], axis=1)
+                u = tf.concat(1, [q_f[-1], q_b[0]], name='u')  # N, Hidden*2
+            else:
+                u = tf.unpack(q_t, axis=1)[-1]
+
             u = tf.nn.dropout(u, keep_prob=self.dropout)
+
 
         self.d_t = d_t
         self.u = u
@@ -98,7 +87,7 @@ class AttentiveReader():
         elif self.attention == 'bilinear':
             r = self.bilinear_attention(d_t, u)
         elif self.attention == 'local':
-            r = self.local_attention(d_t, u, attention='bilinear')
+            r = self.local_attention(d_t, u, attention='concat')
         else:
             raise ValueError(self.attention)
 
@@ -141,15 +130,7 @@ class AttentiveReader():
         acc_sum = tf.scalar_summary("T_accuracy", self.accuracy)
 
         # optimize
-        if self.use_optimizer == 'SGD':
-            self.optim = tf.train.GradientDescentOptimizer(
-                self.learning_rate, name='optimizer')
-        elif self.use_optimizer == 'Adam':
-            self.optim = tf.train.AdamOptimizer(
-                self.learning_rate, name='optimizer')
-        elif self.use_optimizer == 'RMS':
-            self.optim = tf.train.RMSPropOptimizer(
-                self.learning_rate, momentum=self.momentum, decay=self.decay)
+        self.optim = self.get_optimizer()
 
         self.grad_and_var = self.optim.compute_gradients(self.loss)
         if not parallel:
@@ -181,6 +162,44 @@ class AttentiveReader():
             [embed_sum, v_loss_sum, v_acc_sum])
 
         # import ipdb; ipdb.set_trace()
+
+    def rnn(self, input_tensor, seq_length, dtype=tf.float32, use_bidirection=True, cell_type='LSTM'):
+
+        if cell_type == 'LSTM':
+            cell = lambda size: rnn_cell.LSTMCell(size, state_is_tuple=True)
+        elif cell_type == 'GRU':
+            cell = rnn_cell.GRU
+        else:
+            raise ValueError(cell_type)
+
+        if use_bidirection:
+
+            h_t, final_state, = tf.nn.bidirectional_dynamic_rnn(
+                cell(self.size),
+                cell(self.size),
+                input_tensor,
+                sequence_length=seq_length, dtype=dtype)
+            h_t = tf.concat(2, h_t)
+
+        else:
+            h_t, final_state = tf.nn.dynamic_rnn(
+                cell(2 * self.size),
+                input_tensor,
+                sequence_length=seq_length, dtype=dtype)
+        return h_t, final_state
+
+    def get_optimizer(self):
+        if self.use_optimizer == 'SGD':
+            optim = tf.train.GradientDescentOptimizer(
+                self.learning_rate, name='optimizer')
+        elif self.use_optimizer == 'Adam':
+            optim = tf.train.AdamOptimizer(
+                self.learning_rate, name='optimizer')
+        elif self.use_optimizer == 'RMS':
+            optim = tf.train.RMSPropOptimizer(
+                self.learning_rate, momentum=self.momentum, decay=self.decay, name='optimizer')
+        return optim
+
 
     def concat_attention(self, d_t, u, return_attention=False):
         W_ym = tf.get_variable('W_ym', [2 * self.size, self.size])
@@ -231,14 +250,14 @@ class AttentiveReader():
         D = self.D
 
         tanh = tf.tanh(tf.matmul(u, Wp))
-        p = tf.reduce_sum(tanh*V, 1)  # N
+        p = tf.reduce_sum(tanh * V, 1)  # N
         p = self.max_nsteps * tf.sigmoid(p)
         p = tf.to_int32(tf.floor(p))
         self.p = p
 
         pt = tf.minimum(p, D)
-        pt = tf.maximum(pt, self.max_nsteps-D-1)
-        begin_idx = pt-D # N
+        pt = tf.maximum(pt, self.max_nsteps - D - 1)
+        begin_idx = pt - D  # N
         zero = tf.constant(0, shape=[self.batch_size], dtype=tf.int32)
         begin = tf.pack([begin_idx, zero], 1)  # N, 2 of [p-D, 0]
         size = tf.constant([2 * D, -1], dtype=tf.int32)
@@ -254,23 +273,26 @@ class AttentiveReader():
             batches = tf.pack(batches)
 
         if attention == 'bilinear':
-            alignment = self.bilinear_attention(batches, u, return_attention=True) # N, 2D, 2H
+            alignment = self.bilinear_attention(
+                batches, u, return_attention=True)  # N, 2D, 2H
         elif attention == 'concat':
-            alignment = self.concat_attention(batches, u, return_attention=True)
+            alignment = self.concat_attention(
+                batches, u, return_attention=True)
         else:
             raise ValueError(attention)
 
         # here we calculate the 'truncated normal distribution'
-        idx = [ begin_idx + i for i in range(2*D) ] # [N]*2D
-        idx = tf.pack(idx, 1) # N, 2D
+        idx = [begin_idx + i for i in range(2 * D)]  # [N]*2D
+        idx = tf.pack(idx, 1)  # N, 2D
 
-        denominator = (D/2.0) ** 2.0
+        denominator = (D / 2.0) ** 2.0
         numerator = -tf.pow(tf.to_float((idx - tf.expand_dims(p, 1))), 2.0)
         div = tf.truediv(numerator, denominator)
         e = tf.exp(div)  # result of the truncated normal distribution
 
-        self.attention = tf.mul( alignment, e, name='local_attention') # N, 2D
-        r = tf.reduce_sum( batches*tf.expand_dims(self.attention, -1), 1, name='r')
+        self.attention = tf.mul(alignment, e, name='local_attention')  # N, 2D
+        r = tf.reduce_sum(
+            batches * tf.expand_dims(self.attention, -1), 1, name='r')
         return r
 
     def train(self, sess, vocab_size, epoch=25, data_dir="data", dataset_name="cnn",

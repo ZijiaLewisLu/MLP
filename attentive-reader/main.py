@@ -14,6 +14,7 @@ flags.DEFINE_integer("gpu", 2, "the number of gpus to use")
 flags.DEFINE_integer("data_size", None, "Number of files to train on")
 flags.DEFINE_integer("hidden_size", 256, "Hidden dimension for rnn and fully connected layer")
 flags.DEFINE_integer("eval_every", 1000, "Eval every step")
+flags.DEFINE_integer("D", 25, 'local_attention window size')
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
@@ -26,6 +27,7 @@ flags.DEFINE_string("load_path", None, "The path to old model. [None]")
 flags.DEFINE_string("optim", 'RMS', "The optimizer to use [RMS]")
 flags.DEFINE_string("attention", "bilinear", "Attention Mechanism")
 flags.DEFINE_string("activation", 'tanh', "The the last activation layer to use before Softmax loss")
+flags.DEFINE_bool("bidirect", True, "Whether use bidirection rnn")
 FLAGS = flags.FLAGS
 
 def main(_):
@@ -52,7 +54,9 @@ def main(_):
                                     size=FLAGS.hidden_size,
                                     use_optimizer=FLAGS.optim,
                                     activation=FLAGS.activation,
-                                    attention=FLAGS.attention)
+                                    attention=FLAGS.attention,
+                                    D=FLAGS.D,
+                                    bidirection=FLAGS.bidirect)
     print " [*] Using GPU: ", FLAGS.gpu
 
     model.train(sess, FLAGS.vocab_size, FLAGS.epoch,
