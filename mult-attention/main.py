@@ -9,6 +9,7 @@ from utils import pp
 from mdu import batchIter
 from mdu import _load, restruct_glove_embedding
 # from model import ML_Attention
+from tensorflow.contrib.layers import l2_regularizer
 
 
 flags = tf.app.flags
@@ -31,7 +32,7 @@ flags.DEFINE_integer("atten_layer", 3, "Num of attention layer")
 flags.DEFINE_float("learning_rate", 3e-4, "Learning rate")
 # flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 # flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
-flags.DEFINE_float("dropout", 0.9, "Dropout rate")
+flags.DEFINE_float("dropout", 0.8, "Dropout rate")
 flags.DEFINE_float("l2_rate", 0.0, "l2 regularization rate")
 flags.DEFINE_float("clip_norm", 2.5, "l2 regularization rate")
 flags.DEFINE_string("optim", 'Adam', "The optimizer to use")
@@ -135,9 +136,9 @@ def norm(x):
 def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
     
     if FLAGS.model == 'bow':
-        from model import ML_Attention as Net
+        from bow_model import BoW_Attention as Net
     elif FLAGS.model == 'rr':
-        from rr_model import ML_Attention as Net
+        from rrnn_model import RRNN_Attention as Net
     # elif FLAGS.model == 'share':
         # from model_share import ML_Project as Net
     else:
@@ -152,16 +153,24 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
     elif FLAGS.init == 'ort':
         initializer=orthogonal_initializer()
 
-    with tf.variable_scope('model', initializer=initializer,):
+    l2 = l2_regularizer(FLAGS.l2_rate)
+    def reg(w):
+        if w.name.endswith('B:0') or w.name.endswith('Bias:0'):
+            print 'ignoring %s'%w.name
+            return tf.constant(0.0, dtype=tf.float32)
+
+        print 'l2 to ', w.name
+        return l2(w)
+
+    with tf.variable_scope('model', initializer=initializer, regularizer = reg):
 
         model = Net(FLAGS.batch_size, sN, sL, qL, FLAGS.vocab_size, FLAGS.embed_size, FLAGS.hidden_size,
                     learning_rate=FLAGS.learning_rate,
-                    l2_rate=FLAGS.l2_rate,
-                    optim=FLAGS.optim,
-                    attention=FLAGS.atten,
+                    optim_type=FLAGS.optim,
+                    attention_type=FLAGS.atten,
+                    attention_layer=FLAGS.atten_layer,
                     glove=FLAGS.glove,
                     max_norm=FLAGS.clip_norm,
-                    attention_layer=FLAGS.atten_layer,
                     )
 
     return model
