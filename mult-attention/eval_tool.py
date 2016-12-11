@@ -16,7 +16,6 @@ size = 256
 
 Param = namedtuple('Param', 'data result')
 
-
 def one_step(_iter, model, sess, fetch=None):
     if fetch is None:
         fetch = [model.alignment, model.loss, model.accuracy]

@@ -61,17 +61,21 @@ class RRNN_Attention(BaseModel):
         sentence_rep = []
         with tf.variable_scope("sentence_represent") as scope:
             gru_cell = rnn_cell.GRUCell(hidden_size)
+            
             for i, tokens in enumerate(sentence):
                 if i > 0:
                     scope.reuse_variables()
 
-                mask = tf.sequence_mask(sen_len[i], sL, dtype=tf.int64)
-                _p, _ = tf.nn.dynamic_rnn(  # N, sL, H 
-                    gru_cell, tokens, 
-                    sequence_length=mask,
+                # _p, _ = tf.nn.dynamic_rnn(  # N, sL, H 
+                _p, _ = tf.nn.rnn(  # N, sL, H 
+                    gru_cell, tf.unpack(tokens, axis=1), 
+                    # sequence_length=mask,
                     dtype=tf.float32)
 
+                mask = tf.sequence_mask(sen_len[i], sL, dtype=tf.float32)
+                _p = tf.pack(_p, 1) * tf.expand_dims(mask, -1)
                 sentence_rep.append( tf.reduce_max(_p, 1) )  # [N, H] * sL
+                
             sentence = tf.pack(sentence_rep, 1)
 
 
@@ -115,8 +119,6 @@ class RRNN_Attention(BaseModel):
         self.correct_prediction = tf.equal(self.prediction, self.answer_id)
         self.accuracy = tf.reduce_mean(
             tf.cast(self.correct_prediction, tf.float16))
-
-
 
         self.optim = self.get_optimizer(optim_type, learning_rate )
         gvs = self.optim.compute_gradients(self.loss)

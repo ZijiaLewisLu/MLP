@@ -1,6 +1,25 @@
 import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
+import numpy as np
 
+def orthogonal_initializer(scale=1.1):
+    ''' From Lasagne and Keras. Reference: Saxe et al., http://arxiv.org/abs/1312.6120
+    '''
+    print 'Warning -- You have opted to use the orthogonal_initializer function'
+    def _initializer(shape, dtype=tf.float32, partition_info=None):
+        if len(shape) == 1:
+            a = np.random.normal(0.0, 1.0, shape[0])
+            return tf.constant(scale * a, dtype=tf.float32)
+
+        flat_shape = (shape[0], np.prod(shape[1:], dtype=np.int32))
+        a = np.random.normal(0.0, 1.0, flat_shape)
+        u, _, v = np.linalg.svd(a, full_matrices=False)
+        # pick the one with the correct shape
+        q = u if u.shape == flat_shape else v
+        q = q.reshape(shape)  # this needs to be corrected to float32
+        # print('you have initialized one orthogonal matrix.')
+        return tf.constant(scale * q[:shape[0], :shape[1]], dtype=tf.float32)
+    return _initializer
 
 class AttentionCell(rnn_cell.RNNCell):
 
@@ -84,8 +103,8 @@ class BaseModel(object):
 
     def mlp_attention(self, hidden_size, sN, p_rep, q_rep, layer=3):
         with tf.variable_scope('mlp_attention') as scope:
-            Wq = tf.get_variable('Wq', [2 * hidden_size, 2 * hidden_size])
-            Ws = tf.get_variable('Ws', [2 * hidden_size])
+            Wq = tf.get_variable('Wq', [2 * hidden_size, hidden_size])
+            Ws = tf.get_variable('Ws', [hidden_size])
             Q = tf.matmul(q_rep, Wq, name='q_Wq')
             atten = []
             for i in range(sN):
@@ -93,9 +112,11 @@ class BaseModel(object):
                 if i > 0:
                     scope.reuse_variables()
                 for l in range(layer):
+                    in_shape = 2*hidden_size if l == 0 else hidden_size
                     Wp_i = tf.get_variable(
-                        'Wq%d' % l, [2 * hidden_size, 2 * hidden_size])
-                    B_i = tf.get_variable('%d_B' % l, [2 * hidden_size])
+                        'Wq%d' % l, [in_shape, hidden_size])
+                    B_i = tf.get_variable('%d_B' % l, [hidden_size])
+
                     pWQ = tf.matmul(p, Wp_i) + Q + B_i
                     p = tf.tanh(pWQ)
                 atten.append(p)

@@ -10,7 +10,8 @@ from mdu import batchIter
 from mdu import _load, restruct_glove_embedding
 # from model import ML_Attention
 from tensorflow.contrib.layers import l2_regularizer
-
+from base import orthogonal_initializer
+# from eval_tool import norm
 
 flags = tf.app.flags
 
@@ -40,6 +41,8 @@ flags.DEFINE_string("atten", 'concat', "Attention Method")
 flags.DEFINE_string("model", 'bow', "Model")
 flags.DEFINE_string("init", 'ort', "xav, ort, non, ran")
 flags.DEFINE_boolean("glove", False, "whether use glove embedding")
+flags.DEFINE_boolean("tg", False, "whether train glove embedding")
+
 
 
 FLAGS = flags.FLAGS
@@ -53,25 +56,10 @@ val_rate = 0.05
 glove_dir = './data/glove_wiki'
 
 
-def orthogonal_initializer(scale=1.1):
-    ''' From Lasagne and Keras. Reference: Saxe et al., http://arxiv.org/abs/1312.6120
-    '''
-    print 'Warning -- You have opted to use the orthogonal_initializer function'
-    def _initializer(shape, dtype=tf.float32, partition_info=None):
-        if len(shape) == 1:
-            a = np.random.normal(0.0, 1.0, shape[0])
-            return tf.constant(scale * a, dtype=tf.float32)
-
-        flat_shape = (shape[0], np.prod(shape[1:], dtype=np.int32))
-        a = np.random.normal(0.0, 1.0, flat_shape)
-        u, _, v = np.linalg.svd(a, full_matrices=False)
-        # pick the one with the correct shape
-        q = u if u.shape == flat_shape else v
-        q = q.reshape(shape)  # this needs to be corrected to float32
-        # print('you have initialized one orthogonal matrix.')
-        return tf.constant(scale * q[:shape[0], :shape[1]], dtype=tf.float32)
-    return _initializer
-
+def norm(x):
+    if not isinstance(x, np.ndarray):
+        x = x.values
+    return np.sqrt((x**2).sum())
 
 def initialize(sess, saver, load_path=None):
     if not load_path:
@@ -127,20 +115,12 @@ def save_track(data, base_name):
         np.save(fname, d)
 
 
-def norm(x):
-    if not isinstance(x, np.ndarray):
-        x = x.values
-    return np.sqrt((x**2).sum())
-
-
 def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
     
     if FLAGS.model == 'bow':
         from bow_model import BoW_Attention as Net
     elif FLAGS.model == 'rr':
         from rrnn_model import RRNN_Attention as Net
-    # elif FLAGS.model == 'share':
-        # from model_share import ML_Project as Net
     else:
         raise ValueError(FLAGS.model)
 
@@ -155,7 +135,7 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
 
     l2 = l2_regularizer(FLAGS.l2_rate)
     def reg(w):
-        if w.name.endswith('B:0') or w.name.endswith('Bias:0'):
+        if w.name.endswith('B:0') or w.name.endswith('Bias:0') or w.name.endswith('emb:0'):
             print 'ignoring %s'%w.name
             return tf.constant(0.0, dtype=tf.float32)
 
@@ -170,40 +150,12 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
                     attention_type=FLAGS.atten,
                     attention_layer=FLAGS.atten_layer,
                     glove=FLAGS.glove,
+                    train_glove=FLAGS.tg,
                     max_norm=FLAGS.clip_norm,
                     )
 
     return model
 
-# def check_setting(flags):
-#     pp.pprint(flags.FLAGS.__flags)
-#     go = raw_input('Do you want to go with these setting? ')
-#     while go not in ['Yes', 'y', 'Y', 'yes']:
-#         if go == 'pp':
-#             pp.pprint(flags.FLAGS.__flags)
-#         elif go in ['No', 'n', 'N', 'no']:
-#             exit(2)
-#         else:
-#             go = go.split(' ')
-#             if len(go) % 2 != 0:
-#                 print ' Not understood, try again\n'
-#                 continue
-            
-#             i = 0
-#             while i < len(go):
-#                 k = go[i]
-#                 v = go[i+1]
-#                 if k in flags.FLAGS.__flags:
-#                     flags.FLAGS.__flags[k] = v
-#                 else:
-#                     print '%s is a wrong param'
-
-# def input_with_timeout(prompt, timeout=30.0):
-#     import thread
-#     from threading
-#     print prompt
-#     timer = threading.Timer(timeout, thread.interrupt_main)
-#     astring
 
 def main(_):
     pp.pprint(flags.FLAGS.__flags)
@@ -319,11 +271,11 @@ def main(_):
             writer.add_summary(sum_str, gstep)
 
             # gradient norm check =============================
-            for i, (g, v) in enumerate(origin_gv):
-                nm = norm(g)
-                if nm > FLAGS.clip_norm:
-                    tracker.warning('%s, gradient norm: %f, global_step:%d' % (
-                        model.origin_gv[i][1].name, nm, gstep))
+            # for i, (g, v) in enumerate(origin_gv):
+            #     nm = norm(g)
+            #     if nm > FLAGS.clip_norm:
+            #         tracker.warning('%s, gradient norm: %f, global_step:%d' % (
+            #             model.origin_gv[i][1].name, nm, gstep))
 
             if FLAGS.track:
                 if accuracy > max_acc[0]:
