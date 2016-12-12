@@ -15,7 +15,6 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Utilities for downloading data from WMT, tokenizing, vocabularies."""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -191,6 +190,7 @@ def questions_to_token_ids(data_path, vocab_fname):
         vocab = pk.load(f)
     vocab_size = len(vocab)
 
+    # TODO parse to ids dir
     for fname in tqdm(glob(os.path.join(data_path, "*.question"))):
         data_to_token_ids(fname, fname + ".ids%s" % vocab_size, vocab)
 
@@ -287,9 +287,9 @@ def data_iter(flist, max_nstep, max_query_step, batch_size=None, vocab_size=2645
 
 def fetch_files(data_dir, dataset_name, vocab_size):
     train = glob(os.path.join(data_dir, dataset_name, "questions",
-                              "training", "*.question.ids%s_*" % (vocab_size)))
+                              "training", 'ids%d' % vocab_size, "*.question.ids%d_*" % vocab_size ))
     validate = glob(os.path.join(data_dir, dataset_name, "questions",
-                                 "validation", "*.question.ids%s_*" % (vocab_size)))
+                                 "validation", "ids%d"% vocab_size, "*.question.ids%s_*" % (vocab_size)))
     return train, validate
 
 

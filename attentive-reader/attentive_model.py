@@ -5,6 +5,12 @@ import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
 from utils import load_dataset, fetch_files, data_iter
 
+def norm(x):
+    if not isinstance(x, np.ndarray):
+        x = x.values
+    return np.sqrt((x**2).sum())
+
+
 class AttentiveReader():
     """Attentive Reader."""
 
@@ -15,7 +21,7 @@ class AttentiveReader():
                  max_query_length=20,
                  use_optimizer='RMS',
                  activation='tanh',
-                 attention='bilinear',
+                 attention='concat',
                  bidirection=True,
                  D=25,
                  ):
@@ -64,19 +70,14 @@ class AttentiveReader():
             # d_t: N, T, Hidden
             d_t, d_final_state = self.rnn(embed_d, self.d_end, use_bidirection=self.bidirection)
             d_t = tf.concat(2, d_t)
-            print d_t.get_shape()
             d_t = tf.nn.dropout(d_t, keep_prob=self.dropout)
 
         with tf.variable_scope("query_represent"):
             q_t, q_final_state = self.rnn(embed_q, self.q_end, use_bidirection=self.bidirection)
 
-            print type(q_t)
-
             if self.bidirection:
                 q_f = tf.unpack(q_t[0], axis=1)
                 q_b = tf.unpack(q_t[-1], axis=1)
-                print q_f[-1].get_shape()
-                print q_b[0].get_shape()
                 u = tf.concat(1, [q_f[-1], q_b[0]], name='u')  # N, Hidden*2
             else:
                 u = tf.unpack(q_t, axis=1)[-1]
@@ -126,11 +127,11 @@ class AttentiveReader():
 
         self.loss = tf.nn.softmax_cross_entropy_with_logits(
             g, self.y, name='loss')
-        if self.l2_rate > 0:
-            for v in tf.trainable_variables():
-                if v.name.endswith('Matrix:0') or v.name.startswith('W'):
-                    self.loss += self.l2_rate * \
-                        tf.nn.l2_loss(v, name="%s-l2loss" % v.name[:-2])
+        # if self.l2_rate > 0:
+        #     for v in tf.trainable_variables():
+        #         if v.name.endswith('Matrix:0') or v.name.startswith('W'):
+        #             self.loss += self.l2_rate * \
+        #                 tf.nn.l2_loss(v, name="%s-l2loss" % v.name[:-2])
         loss_sum = tf.scalar_summary("T_loss", tf.reduce_mean(self.loss))
 
         correct_prediction = tf.equal(tf.argmax(self.y, 1), tf.argmax(g, 1))
@@ -150,6 +151,7 @@ class AttentiveReader():
 
         # train_sum
         gv_sum = []
+        zf = []
         for g, v in self.grad_and_var:
             v_sum = tf.scalar_summary(
                 "I_{}-var/mean".format(v.name), tf.reduce_mean(v))
@@ -157,15 +159,19 @@ class AttentiveReader():
             if g is not None:
                 g_sum = tf.scalar_summary(
                     "I_{}-grad/mean".format(v.name), tf.reduce_mean(g))
+                zero_frac = tf.scalar_summary(
+                    "I_{}-grad/sparsity".format(v.name), tf.nn.zero_fraction(g))
                 gv_sum.append(g_sum)
+                zf.append(zero_frac)
 
         self.vname = [v.name for g, v in self.grad_and_var]
         self.vars = [v for g, v in self.grad_and_var]
         self.gras = [g for g, v in self.grad_and_var]
+
         if self.attention == 'local':
-            self.train_sum = tf.merge_summary([loss_sum, acc_sum, atten_hist])
+            self.train_sum = tf.merge_summary([loss_sum, acc_sum, zf, atten_hist])
         else:
-            self.train_sum = tf.merge_summary([loss_sum, acc_sum])            
+            self.train_sum = tf.merge_summary([loss_sum, acc_sum])
 
         # validation sum
         v_loss_sum = tf.scalar_summary("V_loss", tf.reduce_mean(self.loss))
@@ -362,7 +368,7 @@ class AttentiveReader():
             running_acc = 0
             running_loss = 0
             for batch_idx, docs, d_end, queries, q_end, y in train_iter:
-                _, summary_str, cost, accuracy = sess.run([self.train_op, self.train_sum, self.loss, self.accuracy],
+                _, summary_str, cost, accuracy, gs = sess.run([self.train_op, self.train_sum, self.loss, self.accuracy, self.gras],
                                                           feed_dict={self.document: docs,
                                                                      self.query: queries,
                                                                      self.d_end: d_end,
@@ -380,6 +386,12 @@ class AttentiveReader():
                     running_loss = 0
                     running_acc = 0
                 counter += 1
+
+                if False:
+                    for v, g in zip(self.vars, gs):
+                        _n = norm(g)
+                        if _n > 5:
+                            print 'EXPLODE %s %f' % ( v.name, _n )
 
                 if (counter + 1) % eval_every == 0:
                     # validate
