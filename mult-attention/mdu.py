@@ -1,4 +1,5 @@
 import json
+import pickle as pk
 import numpy as np
 import random
 import os
@@ -366,6 +367,24 @@ def _load(_fname):
             f.readline()
             line = f.readline()
     return D
+
+
+def prepare_data(path, idf_path, data_size=None, size=3185, val_rate=0.05):
+    train_data = _load(path)
+    with open(idf_path, 'r') as f:
+        train_idf = pk.load(f)
+
+    validate_data = train_data[-size:]
+    validate_idf  = train_idf[-size:]
+    train_data = train_data[:-size]
+    train_idf = train_idf[:-size]
+
+    if data_size:
+        train_data = train_data[:data_size]
+        train_idf  = train_idf[:data_size]
+    vsize = max(20, len(train_data) * val_rate)
+    vsize = int(min(vsize, len(validate_data)))
+    return train_data, train_idf, validate_data, validate_idf, vsize
 
 
 # def load_data(data_dir='/home/zijia/nlp/proj/mult-attention/data/squad/', batch_size=64, vocab_size=50000,

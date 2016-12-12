@@ -7,12 +7,11 @@ import json
 import numpy as np
 from utils import pp
 from mdu import batchIter
-from mdu import _load, restruct_glove_embedding
-# from model import ML_Attention
+from mdu import restruct_glove_embedding
+from mdu import prepare_data
 from tensorflow.contrib.layers import l2_regularizer
 from base import orthogonal_initializer
-import pickle as pk
-# from eval_tool import norm
+from eval_tool import norm
 
 flags = tf.app.flags
 
@@ -58,10 +57,7 @@ glove_dir = './data/glove_wiki'
 idf_path  = './data/squad/train_idf_data.pk'
 
 
-def norm(x):
-    if not isinstance(x, np.ndarray):
-        x = x.values
-    return np.sqrt((x**2).sum())
+
 
 def initialize(sess, saver, load_path=None):
     if not load_path:
@@ -75,24 +71,6 @@ def initialize(sess, saver, load_path=None):
             fname = load_path
         print "  Load from %s" % fname
         saver.restore(sess, fname)
-
-
-def prepare_data(path, idf_path, data_size=None, size=3185, val_rate=0.05):
-    train_data = _load(path)
-    with open(idf_path, 'r') as f:
-        train_idf = pk.load(f)
-
-    validate_data = train_data[-size:]
-    validate_idf  = train_idf[-size:]
-    train_data = train_data[:-size]
-    train_idf = train_idf[:-size]
-
-    if data_size:
-        train_data = train_data[:data_size]
-        train_idf  = train_idf[:data_size]
-    vsize = max(20, len(train_data) * val_rate)
-    vsize = int(min(vsize, len(validate_data)))
-    return train_data, train_idf, validate_data, validate_idf, vsize
 
 
 def create_logger(track_dir, to_console=True):
@@ -281,8 +259,8 @@ def main(_):
             gstep, loss, accuracy, _, sum_str = rslt[:5]
             rslt = rslt[5:]
 
-            score, align, _ = rslt[:3]
-            rslt = rslt[3:]
+            score, align = rslt[:2]
+            rslt = rslt[2:]
 
             loss = loss.mean()
             running_acc += accuracy

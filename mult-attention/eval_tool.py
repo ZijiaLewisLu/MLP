@@ -1,11 +1,11 @@
 import numpy as np
-# import tensorflow as tf
-from main import prepare_data
-from mdu import batchIter
+import tensorflow as tf
+from mdu import batchIter, prepare_data
 import os
 from glob import glob
 import matplotlib.pyplot as plt
 from collections import namedtuple
+import json
 
 batch_size = 32
 sN = 10
@@ -15,6 +15,24 @@ vocab_size = 50000
 size = 256
 
 Param = namedtuple('Param', 'data result')
+
+
+def read(fname):
+    if os.path.isdir(fname):
+        fname = os.path.join(fname, 'Flags.js')
+    with open(fname, 'r') as f:
+        flag = json.load(f)
+    return flag
+
+
+def from_log(log_folder):
+    print read(log_folder)
+    ck_path = os.path.join(log_folder, '/ckpts')
+    ck = tf.train.get_checkpoint_state(ck_path)
+    ckfile = ck.model_checkpoint_path
+    meta = ckfile + '.meta'
+    return ck, meta
+
 
 def one_step(_iter, model, sess, fetch=None):
     if fetch is None:
@@ -33,42 +51,38 @@ def one_step(_iter, model, sess, fetch=None):
                  result=rslt)
 
 
-def softmax(x, axis=-1):
-    x -= x.max()
-    exp = np.exp(x)
-    return exp / np.sum(exp, axis=axis, keepdims=True)
+def evaluate(sess, tensor_dict,
+             step=50, check=False, feed_func=None,
+             train_op=None,
+             sN=sN, sL=sL, qL=qL, batch_size=batch_size,
+             ids_path='./data/squad/ids_not_glove60000_train.txt',
+             idf_path='./data/squad/train_idf_data.pk'):
 
+    train_data, train_idf, validate_data, validate_idf, vsize \
+        = prepare_data(ids_path, idf_path)
 
-def cross_entropy_loss(logit, label, axis=-1):
-    logit = softmax(logit)
-    log = np.log(logit)
-    return label * log
-
-
-def evaluate(sess, tensor_dict, 
-            step=50, check=False, feed_func=None,
-            train_op = None,
-            sN=sN, sL=sL, qL=qL, batch_size=batch_size, 
-            data_path='./data/squad/ids_not_glove60000_train.txt'):
-
-    train, val, vsize = prepare_data(data_path)
-    np.random.shuffle(train)
-    np.random.shuffle(val)
-    titer = batchIter(batch_size, train, sN, sL, qL, stop_id=2)
-    viter = batchIter(batch_size, val, sN, sL, qL, stop_id=2)
+    # np.random.shuffle(train)
+    # np.random.shuffle(val)
+    titer = batchIter(batch_size, train_data, train_idf, sN, sL, qL, stop_id=2)
+    viter = batchIter(batch_size, validate_data,
+                      validate_idf, sN, sL, qL, stop_id=2)
     titer.next()
     viter.next()
 
-    fetch = [ 'loss', 'accuracy', 'score', 'alignment' ]
-    fetch = [ tensor_dict[_] for _ in fetch]
+    fetch = ['loss', 'accuracy', 'score', 'alignment']
+    fetch = [tensor_dict[_] for _ in fetch]
 
     if feed_func is None:
         def feed_func(_data):
-            batch_idx, P, p_len, Q, q_len, A = _data
-            return { tensor_dict['passage']: P,
-                     tensor_dict['query']: Q,
-                     tensor_dict['answer']: A,
-                     tensor_dict['dropout']: 1.0 }
+            batch_idx, P, p_idf, p_len, Q, q_idf, q_len, A = _data
+            return {tensor_dict['passage']: P,
+                    tensor_dict['query']: Q,
+                    tensor_dict['p_len']: p_len,
+                    tensor_dict['q_len']: q_len,
+                    tensor_dict['p_idf']: p_idf,
+                    tensor_dict['q_idf']: q_idf,
+                    tensor_dict['answer']: A,
+                    tensor_dict['dropout']: 1.0}
 
     def _eval(_iter):
         pdis = np.zeros(10)
@@ -116,15 +130,54 @@ def evaluate(sess, tensor_dict,
     v = _eval(viter)
     print
 
-
     print '======= train set ========'
     if train_op is not None:
         fetch.append(train_op)
-    print '  Training'
+        print '  Training'
     t = _eval(titer)
     print '\n\n'
 
     return t + v
+
+
+def dig_out(g):
+    op_names = [_.name for _ in g.get_operations()]
+
+    def get(name):
+        if not name.startswith('model/'):
+            name = 'model/' + name
+        return g.get_tensor_by_name(name + ':0')
+
+    if 'Softmax' in op_names:
+        alignment = get('Softmax')
+    else:
+        alignment = get('alignment')
+
+    for k in op_names:
+        if k.endswith('/attention'):
+            score = get(k)
+            break
+
+    train_op = None
+    if 'model/Adam' in op_names:
+        train_op = g.get_operation_by_name('model/Adam')
+
+    params = {
+        'loss': get('loss'),
+        'accuracy': get('accuracy'),
+        'alignment': alignment,
+        'score': score,
+        'passage': get('passage'),
+        'p_len': get('p_len'),
+        'q_len': get('q_len'),
+        'p_idf': get('p_idf'),
+        'q_idf': get('q_idf'),
+        'dropout': get('dropout_rate'),
+        'query': get('query'),
+        'answer': get('answer'),
+        'train_op': train_op,
+    }
+    return params
 
 
 def concat_attention(p_rep, q_rep, Wp, Wq, Ws):
@@ -136,6 +189,24 @@ def concat_attention(p_rep, q_rep, Wp, Wq, Ws):
 
 def mock_attention(sess):
     pass
+
+
+def norm(x):
+    if not isinstance(x, np.ndarray):
+        x = x.values
+    return np.sqrt((x**2).sum())
+
+
+def softmax(x, axis=-1):
+    x -= x.max()
+    exp = np.exp(x)
+    return exp / np.sum(exp, axis=axis, keepdims=True)
+
+
+def cross_entropy_loss(logit, label, axis=-1):
+    logit = softmax(logit)
+    log = np.log(logit)
+    return label * log
 
 
 def parse_track_log(log_dir):

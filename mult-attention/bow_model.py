@@ -34,7 +34,7 @@ class BoW_Attention(BaseModel):
         self.create_placeholder(batch_size, sN, sL, qL)
 
         # feat = self.stat_attention(hidden_size)
-        
+
         # assert False
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
@@ -63,18 +63,18 @@ class BoW_Attention(BaseModel):
                 dtype=tf.float32)
 
             ffinal = tf.reduce_max(q_rep[0], [1])
-            bfinal = tf.reduce_max(q_rep[-1], [1])
+            bfinal = tf.reduce_max(q_rep[1], [1])
             q_rep = tf.concat(1, [ffinal, bfinal])
 
         with tf.name_scope('BoW'):
-            p_lens = tf.unpack(self.p_len, axis=1)
+            p_lens = tf.unpack(self.p_len, axis=1) # [N] * sN
             masks = []
             for _ in p_lens:
                 m = tf.sequence_mask(_, sL, dtype=tf.float32)
                 masks.append(m)
             masks = tf.pack(masks, 1)  # N, sN, sL
-            self.mask_print = tf.Print(
-                masks, [masks], message='bow mask', first_n=50, name='printBowMask')
+            # self.mask_print = tf.Print(
+            #     masks, [masks], message='bow mask', first_n=50, name='printBowMask')
             masks = tf.expand_dims(masks, -1, name='masks')
             embed_p = embed_p * masks
             bow_p = tf.reduce_sum(embed_p, 2, name='bow')  # N, sN, E
