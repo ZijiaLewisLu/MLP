@@ -15,17 +15,22 @@ class RRNN_Attention(BaseModel):
                  train_glove=False,
                  max_norm=1.5):
         """
-        sN: sentence number  10
-        sL: sentence length  50
-        qL: query length     15   
+        sN: sentence number 
+        sL: sentence length
+        qL: query length
+
+        Placeholders
+        # passage [batch_size, sN, sL]
+        # p_len   [batch_size, sN]
+        # p_idf   [batch_size, sN, sL]
+        # query   [batch_size, qL]
+        # q_len   [batch_size]
+        # q_idf   [batch_size, qL]
+        # answer  [batch_size, sN]
+        # dropout scalar
         """
-        self.passage = tf.placeholder(
-            tf.int32, [batch_size, sN, sL], name='passage')
-        self.p_len  = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
-        self.query  = tf.placeholder(tf.int32, [batch_size, qL], name='query')
-        self.q_len  = tf.placeholder(tf.int32, [batch_size], name='q_len')
-        self.answer = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
-        self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
+        
+        self.create_placeholder(batch_size, sN, sL, qL)
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
         learning_rate = tf.train.exponential_decay(

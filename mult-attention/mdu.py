@@ -270,7 +270,7 @@ def _transform(d, l, end, pad=0, add_end=True):
         return d, l_
 
 
-def batchIter(batch_size, data, sN, sL, qL, stop_id=2, add_stop=True):
+def batchIter(batch_size, data, idf, sN, sL, qL, stop_id=2, add_stop=True):
     N = len(data)
     steps = np.ceil(N / float(batch_size))
     steps = int(steps)
@@ -280,6 +280,9 @@ def batchIter(batch_size, data, sN, sL, qL, stop_id=2, add_stop=True):
     Q = np.zeros([batch_size, qL], dtype=np.int32)
     A = np.zeros([batch_size, sN], dtype=np.int32)
 
+    P_idf = np.zeros([batch_size, sN, sL], dtype=np.int32)
+    Q_idf = np.zeros([batch_size, qL], dtype=np.int32)
+
     p_len = np.zeros([batch_size, sN], dtype=np.int32)
     q_len = np.zeros([batch_size], dtype=np.int32)
 
@@ -287,26 +290,35 @@ def batchIter(batch_size, data, sN, sL, qL, stop_id=2, add_stop=True):
         start = idx * batch_size
         end = (idx + 1) * batch_size
         if end > N:
-            batch = data[start:] + data[:end - N]
+            batch_data = data[start:] + data[:end - N]
+            batch_idf  = idf[start:] + idf[:end - N]
         else:
-            batch = data[start:end]
+            batch_data = data[start:end]
+            batch_idf = idf[start:end]
 
         P.fill(0)
         Q.fill(0)
         A.fill(0)
+        P_idf.fill(0)
+        Q_idf.fill(0)
         p_len.fill(0)
         q_len.fill(0)
 
-        for i, sample in enumerate(batch):
-            sens, q, sid, answer = sample
-            for j, s in enumerate(sens[:sN]):
-                P[i, j], p_len[i, j] = _transform(s, sL, stop_id, add_end=add_stop)
+        for i in range(batch_size):
+            sens, q, sid, answer = batch_data[i]
+            senidf, qidf = batch_idf[i]
+            for j in range(min(sN, len(sens))):
+                P[i, j], p_len[i, j] = _transform(sens[j], sL, stop_id, add_end=add_stop)
+                P_idf[i,j], _ = _transform(senidf[j], sL, None, add_end=False)
+
             Q[i], q_len[i] = _transform(q, qL, stop_id, add_end=add_stop)
+            Q_idf[i], _ = _transform(qidf, qL, None, add_end=False)
+            
             for a in sid:
                 if a < sN:
                     A[i][a] = 1
 
-        yield idx, P, p_len, Q, q_len, A
+        yield idx, P, P_idf, p_len, Q, Q_idf, q_len, A
 
 def _save(_fname, _data):
     with open(_fname, 'w') as f:

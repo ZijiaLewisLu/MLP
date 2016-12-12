@@ -11,6 +11,7 @@ from mdu import _load, restruct_glove_embedding
 # from model import ML_Attention
 from tensorflow.contrib.layers import l2_regularizer
 from base import orthogonal_initializer
+import pickle as pk
 # from eval_tool import norm
 
 flags = tf.app.flags
@@ -54,6 +55,7 @@ qL = 15
 stop_id = 2
 val_rate = 0.05
 glove_dir = './data/glove_wiki'
+idf_path  = './data/squad/train_idf_data.pk'
 
 
 def norm(x):
@@ -75,16 +77,22 @@ def initialize(sess, saver, load_path=None):
         saver.restore(sess, fname)
 
 
-def prepare_data(path, data_size=None, size=3185, val_rate=0.05):
+def prepare_data(path, idf_path, data_size=None, size=3185, val_rate=0.05):
     train_data = _load(path)
+    with open(idf_path, 'r') as f:
+        train_idf = pk.load(f)
+
     validate_data = train_data[-size:]
+    validate_idf  = train_idf[-size:]
     train_data = train_data[:-size]
+    train_idf = train_idf[:-size]
 
     if data_size:
         train_data = train_data[:data_size]
+        train_idf  = train_idf[:data_size]
     vsize = max(20, len(train_data) * val_rate)
     vsize = int(min(vsize, len(validate_data)))
-    return train_data, validate_data, vsize
+    return train_data, train_idf, validate_data, validate_idf, vsize
 
 
 def create_logger(track_dir, to_console=True):
@@ -188,16 +196,20 @@ def main(_):
     initialize(sess, saver, FLAGS.load_path)
     print '  Variable inited'
 
+    # load data =========================
     if not FLAGS.glove:
         ids_path = os.path.join(
             FLAGS.data_dir, 'ids_not_glove%d_train.txt' % FLAGS.vocab_size)
     else:
         ids_path = os.path.join(
             FLAGS.data_dir, 'ids_glove%d_train.txt' % FLAGS.vocab_size)
-    train_data, validate_data, vsize = prepare_data(
-        ids_path, data_size=FLAGS.data_size, val_rate=val_rate)
-    print '  Data Loaded from %s' % ids_path
 
+    train_data, train_idf, validate_data, validate_idf, vsize = prepare_data(
+                        ids_path, idf_path, data_size=FLAGS.data_size, val_rate=val_rate)
+    print '  Data Loaded from %s' % ids_path
+    print '  IDF  Loaded from %s' % idf_path
+
+    # log ================================
     log_dir = "%s/%s" % (FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
     save_dir = os.path.join(log_dir, 'ckpts')
     if os.path.exists(log_dir):
@@ -226,12 +238,17 @@ def main(_):
     sys.stdout.flush()
 
     for epoch_idx in range(FLAGS.epoch):
-        np.random.shuffle(train_data)
-        titer = batchIter(FLAGS.batch_size, train_data,
+
+        order = range(len(train_data))
+        np.random.shuffle(order)
+        train_data = [ train_data[i] for i in order ]
+        train_idf  = [ train_idf[i]  for i in order ]
+        
+        titer = batchIter(FLAGS.batch_size, train_data, train_idf,
                           sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
         tstep = titer.next()
 
-        for batch_idx, P, p_len, Q, q_len, A in titer:
+        for batch_idx, P, p_idf, p_len, Q, q_idf, q_len, A in titer:
 
             rslt = sess.run(
                 [
@@ -253,8 +270,10 @@ def main(_):
                 feed_dict={
                     model.passage: P,
                     model.p_len: p_len,
+                    model.p_idf: p_idf,
                     model.query: Q,
                     model.q_len: q_len,
+                    model.q_idf: q_idf,
                     model.answer: A,
                     model.dropout: FLAGS.dropout,
                 })
@@ -309,17 +328,21 @@ def main(_):
                 _loss = 0.0
                 idxs = np.random.choice(len(validate_data), size=vsize)
                 D = [validate_data[idx] for idx in idxs]
-                viter = batchIter(FLAGS.batch_size, D, sN,
-                                  sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
+                I = [validate_idf[idx]  for idx in idxs]
+                viter = batchIter(FLAGS.batch_size, D, I,
+                            sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
                 vstep = float(viter.next())
-                for batch_idx, P, p_len, Q, q_len, A in viter:
+
+                for batch_idx, P, p_idf, p_len, Q, q_idf, q_len, A in viter:
                     loss, accuracy, sum_str = sess.run(
                         [model.loss, model.accuracy, model.validate_summary],
                         feed_dict={
                             model.passage: P,
                             model.p_len: p_len,
+                            model.p_idf: p_idf,
                             model.query: Q,
                             model.q_len: q_len,
+                            model.q_idf: q_idf,
                             model.answer: A,
                             model.dropout: 1.0,
                         })

@@ -1,7 +1,9 @@
 import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
+from base import BaseModel
 
-class BoW_Attention(object):
+
+class BoW_Attention(BaseModel):
 
     def __init__(self, batch_size, sN, sL, qL,
                  vocab_size, embed_size, hidden_size,
@@ -17,14 +19,23 @@ class BoW_Attention(object):
         sN: sentence number 
         sL: sentence length
         qL: query length
+
+        Placeholders
+        # passage [batch_size, sN, sL]
+        # p_len   [batch_size, sN]
+        # p_idf   [batch_size, sN, sL]
+        # query   [batch_size, qL]
+        # q_len   [batch_size]
+        # q_idf   [batch_size, qL]
+        # answer  [batch_size, sN]
+        # dropout scalar
         """
-        self.passage = tf.placeholder(
-            tf.int32, [batch_size, sN, sL], name='passage')
-        self.p_len = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
-        self.query = tf.placeholder(tf.int32, [batch_size, qL], name='query')
-        self.q_len = tf.placeholder(tf.int32, [batch_size], name='q_len')
-        self.answer = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
-        self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
+
+        self.create_placeholder(batch_size, sN, sL, qL)
+
+        # feat = self.stat_attention(hidden_size)
+        
+        # assert False
 
         global_step = tf.Variable(0, name='global_step', trainable=False)
         learning_rate = tf.train.exponential_decay(
@@ -95,7 +106,8 @@ class BoW_Attention(object):
             p_rep = tf.nn.dropout(p_rep, self.dropout)
 
         p_rep = tf.unpack(p_rep, axis=1)
-        atten = self.apply_attention(attention_type, hidden_size, sN, p_rep, q_rep, layer=attention_layer)
+        atten = self.apply_attention(
+            attention_type, hidden_size, sN, p_rep, q_rep, layer=attention_layer)
 
         atten = atten - tf.reduce_min(atten, [1], keep_dims=True)
         atten = tf.mul(atten, sN_mask, name='unnormalized_attention')
@@ -108,11 +120,12 @@ class BoW_Attention(object):
 
         self.prediction = tf.argmax(self.score, 1)
         self.answer_id = tf.argmax(self.answer, 1)
-        self.correct_prediction = tf.equal(self.prediction, self.answer_id)  # N
+        self.correct_prediction = tf.equal(
+            self.prediction, self.answer_id)  # N
         self.accuracy = tf.reduce_mean(
             tf.cast(self.correct_prediction, tf.float32), name='accuracy')
 
-        self.optim = self.get_optimizer(optim_type, learning_rate )
+        self.optim = self.get_optimizer(optim_type, learning_rate)
         gvs = self.optim.compute_gradients(self.loss)
         with tf.name_scope('clip_norm'):
             self.gvs = [(tf.clip_by_norm(g, max_norm), v) for g, v in gvs]
@@ -124,7 +137,7 @@ class BoW_Attention(object):
         tsum, vsum = self.create_summary()
         self.train_summary = tf.merge_summary(tsum)
         self.validate_summary = tf.merge_summary(vsum)
-        
+
         # store param =======================
         self.p_rep = p_rep
         self.q_rep = q_rep

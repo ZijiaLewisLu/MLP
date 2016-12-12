@@ -2,10 +2,12 @@ import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
 import numpy as np
 
+
 def orthogonal_initializer(scale=1.1):
     ''' From Lasagne and Keras. Reference: Saxe et al., http://arxiv.org/abs/1312.6120
     '''
     print 'Warning -- You have opted to use the orthogonal_initializer function'
+
     def _initializer(shape, dtype=tf.float32, partition_info=None):
         if len(shape) == 1:
             a = np.random.normal(0.0, 1.0, shape[0])
@@ -20,6 +22,7 @@ def orthogonal_initializer(scale=1.1):
         # print('you have initialized one orthogonal matrix.')
         return tf.constant(scale * q[:shape[0], :shape[1]], dtype=tf.float32)
     return _initializer
+
 
 class AttentionCell(rnn_cell.RNNCell):
 
@@ -54,6 +57,20 @@ class BaseModel(object):
     def __init__(self, *args, **kwargs):
         pass
 
+    def create_placeholder(self, batch_size, sN, sL, qL):
+        self.passage = tf.placeholder(
+            tf.int32, [batch_size, sN, sL], name='passage')
+        self.p_len = tf.placeholder(tf.int32, [batch_size, sN], name='p_len')
+        self.query = tf.placeholder(tf.int32, [batch_size, qL], name='query')
+        self.q_len = tf.placeholder(tf.int32, [batch_size], name='q_len')
+        self.answer = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
+
+        self.p_idf = tf.placeholder(
+            tf.float32, [batch_size, sN, sL], name='p_idf')
+        self.q_idf = tf.placeholder(tf.float32, [batch_size, qL], name='q_idf')
+
+        self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
+
     def apply_attention(self, _type, hidden_size, sN, p_rep, q_rep, layer=3):
         print '  Using attention %s' % _type
         if _type == 'bilinear':
@@ -71,6 +88,49 @@ class BaseModel(object):
 
         return atten
 
+
+    def construct_stat_matrix(self):
+        with tf.variable_scope('construct_statisitc_matrix'):
+            qL = self.query.get_shape()[1].value
+
+            que = tf.to_float(self.query)
+            q_pair = tf.pack( [ que, self.q_idf], axis=-1 ) # N, qL, 2
+            q_pair = tf.unpack( q_pair ) # [qL, 2] * N
+
+            N, sN, sL = self.passage.get_shape().as_list()
+
+            sample_ids = tf.unpack( tf.to_float(self.passage) )
+            sample_idf = tf.unpack( self.p_idf )
+            tensor = []
+            for n in range(N):
+                idfs = tf.unpack(sample_idf[n])
+                sens = tf.unpack(sample_ids[n])
+
+                sample = []
+                for i, (_idf, s) in enumerate(zip(idfs, sens)):
+                    topidf, idx = tf.nn.top_k( _idf, qL)
+                    topsid = tf.gather( s, idx )
+
+                    t = tf.pack( [topsid, topidf ], axis=-1 ) 
+                    t = tf.concat( 1, [t, q_pair[i]] )  # qL, 4
+                    sample.append(t)
+
+                tensor.append( tf.pack(sample) )
+            tensor = tf.pack( tensor )
+
+        self.stat_tensor = tensor 
+        return tensor
+
+    def stat_attention(self, hidden_size):
+        tensor = self.construct_stat_matrix() # N, sN, qL, 4
+        with tf.variable_scope('statistic_attention'):
+            qL = self.query.get_shape().as_list()[1]
+            # sN = self.passage.get_shape().as_list()[1]
+            fltr = tf.get_variable('Filter', [ 1, qL, 2*2, hidden_size ] )
+            feat = tf.nn.conv2d(tensor, fltr, [1,1,qL,1], 'VALID', name='Conv')
+            feat = tf.squeeze( feat, squeeze_dims=[2] )
+        return feat
+
     def bilinear_attention(self, hidden_size, sN, p_rep, q_rep):
         # a[i] = p_rep[i] * W * q_rep
         with tf.variable_scope("bilinear_attention"):
@@ -83,12 +143,17 @@ class BaseModel(object):
             atten = tf.pack(atten, axis=1, name='attention')  # N, sN
         return atten
 
-    def concat_attention(self, hidden_size, sN, p_rep, q_rep):
+    def concat_attention(self, hidden_size, sN, p_rep, q_rep, use_stat_atten=True):
         # a[i] = Ws * tanh( p_rep[i]*Wp + q_rep*Wq )
         with tf.variable_scope("concat_attention"):
             Wp = tf.get_variable('Wp', [2 * hidden_size, 2 * hidden_size])
             Wq = tf.get_variable('Wq', [2 * hidden_size, 2 * hidden_size])
-            Ws = tf.get_variable('Ws', [2 * hidden_size])
+            if use_stat_atten:
+                Ws = tf.get_variable('Ws', [3 * hidden_size])
+                tensor = self.stat_attention(hidden_size)
+            else:
+                Ws = tf.get_variable('Ws', [2 * hidden_size])
+
             atten = []
             Q = tf.matmul(q_rep, Wq, name='q_Wq')
             self.before_tanh = []
@@ -98,6 +163,10 @@ class BaseModel(object):
                 a = tf.tanh(pWQ)  # N, 2H
                 atten.append(a)
             atten = tf.pack(atten, axis=1)  # N, sN, 2H
+
+            if use_stat_atten:
+                atten = tf.concat(2, [atten, tensor])
+                
             atten = tf.reduce_sum(atten * Ws, 2, name='attention')  # N, sN
         return atten
 
@@ -112,7 +181,7 @@ class BaseModel(object):
                 if i > 0:
                     scope.reuse_variables()
                 for l in range(layer):
-                    in_shape = 2*hidden_size if l == 0 else hidden_size
+                    in_shape = 2 * hidden_size if l == 0 else hidden_size
                     Wp_i = tf.get_variable(
                         'Wq%d' % l, [in_shape, hidden_size])
                     B_i = tf.get_variable('%d_B' % l, [hidden_size])
@@ -181,7 +250,8 @@ class BaseModel(object):
             gv_sum += [v_sum, g_sum, zero_frac]
             gv_hist_sum += [v_his, g_his]
 
-        train_summary = [accu_sum, loss_sum, self.embed_sum, gv_sum, gv_hist_sum, self.lr_sum, self.align_his]
+        train_summary = [accu_sum, loss_sum, self.embed_sum,
+                         gv_sum, gv_hist_sum, self.lr_sum, self.align_his]
 
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
@@ -191,4 +261,3 @@ class BaseModel(object):
         self.gv_hist_sum = gv_hist_sum
 
         return train_summary, validate_summary
-
