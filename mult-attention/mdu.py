@@ -257,7 +257,8 @@ def reverse(IDS, re_vocab):
 #     _save(ids_path + '_dev.txt', dev_ids)
 
 
-def _transform(d, l, end, pad=0, add_end=True):
+def _transform(d, l, end, pad=1, add_end=True):
+    d = list(d)
     if len(d) >= l:
         if add_end:
             d[l - 1] = end
@@ -276,12 +277,12 @@ def batchIter(batch_size, data, idf, sN, sL, qL, stop_id=2, add_stop=True):
     steps = int(steps)
     yield steps
 
-    P = np.zeros([batch_size, sN, sL], dtype=np.int32)
-    Q = np.zeros([batch_size, qL], dtype=np.int32)
+    P = np.ones([batch_size, sN, sL], dtype=np.int32)
+    Q = np.ones([batch_size, qL], dtype=np.int32)
     A = np.zeros([batch_size, sN], dtype=np.int32)
 
-    P_idf = np.zeros([batch_size, sN, sL], dtype=np.int32)
-    Q_idf = np.zeros([batch_size, qL], dtype=np.int32)
+    P_idf = np.zeros([batch_size, sN, sL], dtype=np.float32)
+    Q_idf = np.zeros([batch_size, qL], dtype=np.float32)
 
     p_len = np.zeros([batch_size, sN], dtype=np.int32)
     q_len = np.zeros([batch_size], dtype=np.int32)
@@ -296,8 +297,8 @@ def batchIter(batch_size, data, idf, sN, sL, qL, stop_id=2, add_stop=True):
             batch_data = data[start:end]
             batch_idf = idf[start:end]
 
-        P.fill(0)
-        Q.fill(0)
+        P.fill(1)
+        Q.fill(1)
         A.fill(0)
         P_idf.fill(0)
         Q_idf.fill(0)
@@ -308,11 +309,11 @@ def batchIter(batch_size, data, idf, sN, sL, qL, stop_id=2, add_stop=True):
             sens, q, sid, answer = batch_data[i]
             senidf, qidf = batch_idf[i]
             for j in range(min(sN, len(sens))):
-                P[i, j], p_len[i, j] = _transform(sens[j], sL, stop_id, add_end=add_stop)
-                P_idf[i,j], _ = _transform(senidf[j], sL, None, add_end=False)
+                P[i, j], p_len[i, j] = _transform(sens[j], sL, stop_id, pad=1, add_end=add_stop)
+                P_idf[i,j], _ = _transform(senidf[j], sL, None, pad=0, add_end=False)
 
-            Q[i], q_len[i] = _transform(q, qL, stop_id, add_end=add_stop)
-            Q_idf[i], _ = _transform(qidf, qL, None, add_end=False)
+            Q[i], q_len[i] = _transform(q, qL, stop_id, pad=1, add_end=add_stop)
+            Q_idf[i], _ = _transform(qidf, qL, None, pad=0, add_end=False)
             
             for a in sid:
                 if a < sN:

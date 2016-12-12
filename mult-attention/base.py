@@ -143,7 +143,7 @@ class BaseModel(object):
             atten = tf.pack(atten, axis=1, name='attention')  # N, sN
         return atten
 
-    def concat_attention(self, hidden_size, sN, p_rep, q_rep, use_stat_atten=True):
+    def concat_attention(self, hidden_size, sN, p_rep, q_rep, use_stat_atten=False):
         # a[i] = Ws * tanh( p_rep[i]*Wp + q_rep*Wq )
         with tf.variable_scope("concat_attention"):
             Wp = tf.get_variable('Wp', [2 * hidden_size, 2 * hidden_size])
@@ -166,7 +166,7 @@ class BaseModel(object):
 
             if use_stat_atten:
                 atten = tf.concat(2, [atten, tensor])
-                
+
             atten = tf.reduce_sum(atten * Ws, 2, name='attention')  # N, sN
         return atten
 

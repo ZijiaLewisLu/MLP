@@ -184,7 +184,7 @@ def main(_):
     if FLAGS.glove:
         fname = os.path.join(glove_dir, 'glove.6B.%dd.txt' % FLAGS.embed_size)
         vocab_path = os.path.join(
-            FLAGS.data_dir, "vocab_%d.js" % FLAGS.vocab_size)
+            FLAGS.data_dir, "vocab_glove_%d.js" % FLAGS.vocab_size)
         with open(vocab_path, 'r') as f:
             vocab = json.load(f)
         embedding = restruct_glove_embedding(
@@ -260,7 +260,7 @@ def main(_):
 
                     model.score,
                     model.alignment,
-                    model.origin_gv,
+                    # model.origin_gv,
 
                     # model.check_op,
                     # model.mask_print,
@@ -281,7 +281,7 @@ def main(_):
             gstep, loss, accuracy, _, sum_str = rslt[:5]
             rslt = rslt[5:]
 
-            score, align, origin_gv = rslt[:3]
+            score, align, _ = rslt[:3]
             rslt = rslt[3:]
 
             loss = loss.mean()
@@ -296,11 +296,11 @@ def main(_):
             #         tracker.warning('%s, gradient norm: %f, global_step:%d' % (
             #             model.origin_gv[i][1].name, nm, gstep))
 
-            if FLAGS.track:
-                if accuracy > max_acc[0]:
-                    max_acc = [accuracy, score, align, A]
-                if loss < min_loss[0]:
-                    min_loss = [loss, score, align, A]
+            # if FLAGS.track:
+            #     if accuracy > max_acc[0]:
+            #         max_acc = [accuracy, score, align, A]
+            #     if loss < min_loss[0]:
+            #         min_loss = [loss, score, align, A]
 
             if (gstep + 1) % 20 == 0:
                 print "Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f" \
@@ -310,19 +310,24 @@ def main(_):
                 running_acc = 0.0
                 sess.run(model.learning_rate)
 
+            if (gstep + 1) % FLAGS.save_every == 0:
+                fname = os.path.join(save_dir, 'model')
+                print "  Saving Model..."
+                saver.save(sess, fname, global_step=gstep)
+
             if (gstep + 1) % FLAGS.eval_every == 0:
 
-                if FLAGS.track:
-                    mark = str(time.time())
-                    base_name = os.path.join(track_dir, mark)
+                # if FLAGS.track:
+                #     mark = str(time.time())
+                #     base_name = os.path.join(track_dir, mark)
 
-                    tracker.info('Train %d %s' % (gstep, mark))
-                    tracker.info('max_accuracy %.4f' % max_acc[0])
-                    tracker.info('min_loss %.4f' % min_loss[0])
-                    save_track(max_acc[1:], base_name + "_Tacc")
-                    save_track(min_loss[1:], base_name + "_Tloss")
-                    max_acc = [0, None, None, None]
-                    min_loss = [np.inf, None, None, None]
+                #     tracker.info('Train %d %s' % (gstep, mark))
+                #     tracker.info('max_accuracy %.4f' % max_acc[0])
+                #     tracker.info('min_loss %.4f' % min_loss[0])
+                #     save_track(max_acc[1:], base_name + "_Tacc")
+                #     save_track(min_loss[1:], base_name + "_Tloss")
+                #     max_acc = [0, None, None, None]
+                #     min_loss = [np.inf, None, None, None]
 
                 _accuracy = 0.0
                 _loss = 0.0
@@ -353,29 +358,26 @@ def main(_):
                     vcounter += 1
                     writer.add_summary(sum_str, vcounter)
 
-                    if FLAGS.track:
-                        if accuracy > max_acc[0]:
-                            max_acc = [accuracy, score, align, A]
-                        if loss < min_loss[0]:
-                            min_loss = [loss, score, align, A]
+                    # if FLAGS.track:
+                    #     if accuracy > max_acc[0]:
+                    #         max_acc = [accuracy, score, align, A]
+                    #     if loss < min_loss[0]:
+                    #         min_loss = [loss, score, align, A]
 
                 print '  Evaluation: time: %4.4f, loss: %.8f, accuracy: %.8f' % \
                     (time.time() - start_time, _loss / vstep, _accuracy / vstep)
                 vcounter += int(vstep / 4.0)  # add gap
 
-                if FLAGS.track:
-                    tracker.info('Validate %d %s' % (gstep, mark))
-                    tracker.info('max_accuracy %.4f' % max_acc[0])
-                    tracker.info('min_loss %.4f' % min_loss[0])
-                    save_track(max_acc[1:], base_name + "_Vacc")
-                    save_track(min_loss[1:], base_name + "_Vloss")
-                    max_acc = [0, None, None, None]
-                    min_loss = [np.inf, None, None, None]
+                # if FLAGS.track:
+                #     tracker.info('Validate %d %s' % (gstep, mark))
+                #     tracker.info('max_accuracy %.4f' % max_acc[0])
+                #     tracker.info('min_loss %.4f' % min_loss[0])
+                #     save_track(max_acc[1:], base_name + "_Vacc")
+                #     save_track(min_loss[1:], base_name + "_Vloss")
+                #     max_acc = [0, None, None, None]
+                #     min_loss = [np.inf, None, None, None]
 
-            if (gstep + 1) % FLAGS.save_every == 0:
-                fname = os.path.join(save_dir, 'model')
-                print "  Saving Model..."
-                saver.save(sess, fname, global_step=gstep)
+
 
 if __name__ == '__main__':
     tf.app.run()
