@@ -107,6 +107,8 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
         from bow_model import BoW_Attention as Net
     elif FLAGS.model == 'rr':
         from rrnn_model import RRNN_Attention as Net
+    elif FLAGS.model == 'test':
+        from test_model import Attention as Net
     else:
         raise ValueError(FLAGS.model)
 
@@ -155,205 +157,205 @@ def main(_):
         # print('  Using GPU:%s' % gpu_list)
         os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu)
 
-    sess = tf.Session()
-    model = create_model(FLAGS)
-    print '  Model Built'
+    with tf.Session() as sess:
+        model = create_model(FLAGS)
+        print '  Model Built'
 
-    if FLAGS.glove:
-        fname = os.path.join(glove_dir, 'glove.6B.%dd.txt' % FLAGS.embed_size)
-        vocab_path = os.path.join(
-            FLAGS.data_dir, "vocab_glove_%d.js" % FLAGS.vocab_size)
-        with open(vocab_path, 'r') as f:
-            vocab = json.load(f)
-        embedding = restruct_glove_embedding(
-            fname, vocab, dim=FLAGS.embed_size)
-        sess.run(model.emb.assign(embedding))
-        print '  Load Embedding Matrix from %s' % fname
+        if FLAGS.glove:
+            fname = os.path.join(glove_dir, 'glove.6B.%dd.txt' % FLAGS.embed_size)
+            vocab_path = os.path.join(
+                FLAGS.data_dir, "vocab_glove_%d.js" % FLAGS.vocab_size)
+            with open(vocab_path, 'r') as f:
+                vocab = json.load(f)
+            embedding = restruct_glove_embedding(
+                fname, vocab, dim=FLAGS.embed_size)
+            sess.run(model.emb.assign(embedding))
+            print '  Load Embedding Matrix from %s' % fname
 
-    saver = tf.train.Saver(max_to_keep=15)
-    initialize(sess, saver, FLAGS.load_path)
-    print '  Variable inited'
+        saver = tf.train.Saver(max_to_keep=15)
+        initialize(sess, saver, FLAGS.load_path)
+        print '  Variable inited'
 
-    # load data =========================
-    if not FLAGS.glove:
-        ids_path = os.path.join(
-            FLAGS.data_dir, 'ids_not_glove%d_train.txt' % FLAGS.vocab_size)
-    else:
-        ids_path = os.path.join(
-            FLAGS.data_dir, 'ids_glove%d_train.txt' % FLAGS.vocab_size)
+        # load data =========================
+        if not FLAGS.glove:
+            ids_path = os.path.join(
+                FLAGS.data_dir, 'ids_not_glove%d_train.txt' % FLAGS.vocab_size)
+        else:
+            ids_path = os.path.join(
+                FLAGS.data_dir, 'ids_glove%d_train.txt' % FLAGS.vocab_size)
 
-    train_data, train_idf, validate_data, validate_idf, vsize = prepare_data(
-                        ids_path, idf_path, data_size=FLAGS.data_size, val_rate=val_rate)
-    print '  Data Loaded from %s' % ids_path
-    print '  IDF  Loaded from %s' % idf_path
+        train_data, train_idf, validate_data, validate_idf, vsize = prepare_data(
+                            ids_path, idf_path, data_size=FLAGS.data_size, val_rate=val_rate)
+        print '  Data Loaded from %s' % ids_path
+        print '  IDF  Loaded from %s' % idf_path
 
-    # log ================================
-    log_dir = "%s/%s" % (FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
-    save_dir = os.path.join(log_dir, 'ckpts')
-    if os.path.exists(log_dir):
-        print('log_dir exist %s' % log_dir)
-        exit(2)
-    os.makedirs(save_dir)
-    with open(log_dir + '/Flags.js', 'w') as f:
-        json.dump(FLAGS.__flags, f, indent=4)
-    print '  Writing log to %s' % log_dir
+        # log ================================
+        log_dir = "%s/%s" % (FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
+        save_dir = os.path.join(log_dir, 'ckpts')
+        if os.path.exists(log_dir):
+            print('log_dir exist %s' % log_dir)
+            exit(2)
+        os.makedirs(save_dir)
+        with open(log_dir + '/Flags.js', 'w') as f:
+            json.dump(FLAGS.__flags, f, indent=4)
+        print '  Writing log to %s' % log_dir
 
-    tracker = create_logger(log_dir, to_console=True)
-    if FLAGS.track:
-        track_dir = os.path.join(log_dir, 'track')
-        os.makedirs(track_dir)
+        tracker = create_logger(log_dir, to_console=True)
+        if FLAGS.track:
+            track_dir = os.path.join(log_dir, 'track')
+            os.makedirs(track_dir)
 
-    # counter = 1
-    vcounter = 1
-    writer = tf.train.SummaryWriter(log_dir, sess.graph)
-    start_time = time.time()
-    running_acc = 0.0
-    running_loss = 0.0
-    max_acc = [0, None, None, None]
-    min_loss = [np.inf, None, None, None]
-    print '  Start Training'
-    tracker.info('  So you know I am working:)')
-    sys.stdout.flush()
+        # counter = 1
+        vcounter = 1
+        writer = tf.train.SummaryWriter(log_dir, sess.graph)
+        start_time = time.time()
+        running_acc = 0.0
+        running_loss = 0.0
+        # max_acc = [0, None, None, None]
+        # min_loss = [np.inf, None, None, None]
+        print '  Start Training'
+        tracker.info('  So you know I am working:)')
+        sys.stdout.flush()
 
-    for epoch_idx in range(FLAGS.epoch):
+        for epoch_idx in range(FLAGS.epoch):
 
-        order = range(len(train_data))
-        np.random.shuffle(order)
-        train_data = [ train_data[i] for i in order ]
-        train_idf  = [ train_idf[i]  for i in order ]
-        
-        titer = batchIter(FLAGS.batch_size, train_data, train_idf,
-                          sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
-        tstep = titer.next()
+            order = range(len(train_data))
+            np.random.shuffle(order)
+            train_data = [ train_data[i] for i in order ]
+            train_idf  = [ train_idf[i]  for i in order ]
+            
+            titer = batchIter(FLAGS.batch_size, train_data, train_idf,
+                              sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
+            tstep = titer.next()
 
-        for batch_idx, P, p_idf, p_len, Q, q_idf, q_len, A in titer:
+            for batch_idx, P, p_idf, p_len, Q, q_idf, q_len, A in titer:
 
-            rslt = sess.run(
-                [
-                    model.global_step,
-                    model.loss,
-                    model.accuracy,
-                    model.train_op,
-                    model.train_summary, 
+                rslt = sess.run(
+                    [
+                        model.global_step,
+                        model.loss,
+                        model.accuracy,
+                        model.train_op,
+                        model.train_summary, 
 
-                    model.score,
-                    model.alignment,
-                    # model.origin_gv,
+                        model.score,
+                        model.alignment,
+                        # model.origin_gv,
 
-                    # model.check_op,
-                    # model.mask_print,
-                    # model.sn_c_print,
+                        # model.check_op,
+                        # model.mask_print,
+                        # model.sn_c_print,
 
-                ],
-                feed_dict={
-                    model.passage: P,
-                    model.p_len: p_len,
-                    model.p_idf: p_idf,
-                    model.query: Q,
-                    model.q_len: q_len,
-                    model.q_idf: q_idf,
-                    model.answer: A,
-                    model.dropout: FLAGS.dropout,
-                })
+                    ],
+                    feed_dict={
+                        model.passage: P,
+                        model.p_len: p_len,
+                        model.p_idf: p_idf,
+                        model.query: Q,
+                        model.q_len: q_len,
+                        model.q_idf: q_idf,
+                        model.answer: A,
+                        model.dropout: FLAGS.dropout,
+                    })
 
-            gstep, loss, accuracy, _, sum_str = rslt[:5]
-            rslt = rslt[5:]
+                gstep, loss, accuracy, _, sum_str = rslt[:5]
+                rslt = rslt[5:]
 
-            score, align = rslt[:2]
-            rslt = rslt[2:]
+                score, align = rslt[:2]
+                rslt = rslt[2:]
 
-            loss = loss.mean()
-            running_acc += accuracy
-            running_loss += loss
-            writer.add_summary(sum_str, gstep)
+                loss = loss.mean()
+                running_acc += accuracy
+                running_loss += loss
+                writer.add_summary(sum_str, gstep)
 
-            # gradient norm check =============================
-            # for i, (g, v) in enumerate(origin_gv):
-            #     nm = norm(g)
-            #     if nm > FLAGS.clip_norm:
-            #         tracker.warning('%s, gradient norm: %f, global_step:%d' % (
-            #             model.origin_gv[i][1].name, nm, gstep))
-
-            # if FLAGS.track:
-            #     if accuracy > max_acc[0]:
-            #         max_acc = [accuracy, score, align, A]
-            #     if loss < min_loss[0]:
-            #         min_loss = [loss, score, align, A]
-
-            if (gstep + 1) % 20 == 0:
-                print "Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f" \
-                    % (epoch_idx, batch_idx, tstep, time.time() - start_time, running_loss / 20.0, running_acc / 20.0)
-                sys.stdout.flush()
-                running_loss = 0.0
-                running_acc = 0.0
-                sess.run(model.learning_rate)
-
-            if (gstep + 1) % FLAGS.save_every == 0:
-                fname = os.path.join(save_dir, 'model')
-                print "  Saving Model..."
-                saver.save(sess, fname, global_step=gstep)
-
-            if (gstep + 1) % FLAGS.eval_every == 0:
+                # gradient norm check =============================
+                # for i, (g, v) in enumerate(origin_gv):
+                #     nm = norm(g)
+                #     if nm > FLAGS.clip_norm:
+                #         tracker.warning('%s, gradient norm: %f, global_step:%d' % (
+                #             model.origin_gv[i][1].name, nm, gstep))
 
                 # if FLAGS.track:
-                #     mark = str(time.time())
-                #     base_name = os.path.join(track_dir, mark)
+                #     if accuracy > max_acc[0]:
+                #         max_acc = [accuracy, score, align, A]
+                #     if loss < min_loss[0]:
+                #         min_loss = [loss, score, align, A]
 
-                #     tracker.info('Train %d %s' % (gstep, mark))
-                #     tracker.info('max_accuracy %.4f' % max_acc[0])
-                #     tracker.info('min_loss %.4f' % min_loss[0])
-                #     save_track(max_acc[1:], base_name + "_Tacc")
-                #     save_track(min_loss[1:], base_name + "_Tloss")
-                #     max_acc = [0, None, None, None]
-                #     min_loss = [np.inf, None, None, None]
+                if (gstep + 1) % 20 == 0:
+                    print "%d Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f" \
+                        % (gstep, epoch_idx, batch_idx, tstep, time.time() - start_time, running_loss / 20.0, running_acc / 20.0)
+                    sys.stdout.flush()
+                    running_loss = 0.0
+                    running_acc = 0.0
+                    sess.run(model.learning_rate)
 
-                _accuracy = 0.0
-                _loss = 0.0
-                idxs = np.random.choice(len(validate_data), size=vsize)
-                D = [validate_data[idx] for idx in idxs]
-                I = [validate_idf[idx]  for idx in idxs]
-                viter = batchIter(FLAGS.batch_size, D, I,
-                            sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
-                vstep = float(viter.next())
+                if (gstep + 1) % FLAGS.save_every == 0:
+                    fname = os.path.join(save_dir, 'model')
+                    print "  Saving Model..."
+                    saver.save(sess, fname, global_step=gstep)
 
-                for batch_idx, P, p_idf, p_len, Q, q_idf, q_len, A in viter:
-                    loss, accuracy, sum_str = sess.run(
-                        [model.loss, model.accuracy, model.validate_summary],
-                        feed_dict={
-                            model.passage: P,
-                            model.p_len: p_len,
-                            model.p_idf: p_idf,
-                            model.query: Q,
-                            model.q_len: q_len,
-                            model.q_idf: q_idf,
-                            model.answer: A,
-                            model.dropout: 1.0,
-                        })
-
-                    loss = loss.mean()
-                    _accuracy += accuracy
-                    _loss += loss
-                    vcounter += 1
-                    writer.add_summary(sum_str, vcounter)
+                if (gstep + 1) % FLAGS.eval_every == 0:
 
                     # if FLAGS.track:
-                    #     if accuracy > max_acc[0]:
-                    #         max_acc = [accuracy, score, align, A]
-                    #     if loss < min_loss[0]:
-                    #         min_loss = [loss, score, align, A]
+                    #     mark = str(time.time())
+                    #     base_name = os.path.join(track_dir, mark)
 
-                print '  Evaluation: time: %4.4f, loss: %.8f, accuracy: %.8f' % \
-                    (time.time() - start_time, _loss / vstep, _accuracy / vstep)
-                vcounter += int(vstep / 4.0)  # add gap
+                    #     tracker.info('Train %d %s' % (gstep, mark))
+                    #     tracker.info('max_accuracy %.4f' % max_acc[0])
+                    #     tracker.info('min_loss %.4f' % min_loss[0])
+                    #     save_track(max_acc[1:], base_name + "_Tacc")
+                    #     save_track(min_loss[1:], base_name + "_Tloss")
+                    #     max_acc = [0, None, None, None]
+                    #     min_loss = [np.inf, None, None, None]
 
-                # if FLAGS.track:
-                #     tracker.info('Validate %d %s' % (gstep, mark))
-                #     tracker.info('max_accuracy %.4f' % max_acc[0])
-                #     tracker.info('min_loss %.4f' % min_loss[0])
-                #     save_track(max_acc[1:], base_name + "_Vacc")
-                #     save_track(min_loss[1:], base_name + "_Vloss")
-                #     max_acc = [0, None, None, None]
-                #     min_loss = [np.inf, None, None, None]
+                    _accuracy = 0.0
+                    _loss = 0.0
+                    idxs = np.random.choice(len(validate_data), size=vsize)
+                    D = [validate_data[idx] for idx in idxs]
+                    I = [validate_idf[idx]  for idx in idxs]
+                    viter = batchIter(FLAGS.batch_size, D, I,
+                                sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
+                    vstep = float(viter.next())
+
+                    for batch_idx, P, p_idf, p_len, Q, q_idf, q_len, A in viter:
+                        loss, accuracy, sum_str = sess.run(
+                            [model.loss, model.accuracy, model.validate_summary],
+                            feed_dict={
+                                model.passage: P,
+                                model.p_len: p_len,
+                                model.p_idf: p_idf,
+                                model.query: Q,
+                                model.q_len: q_len,
+                                model.q_idf: q_idf,
+                                model.answer: A,
+                                model.dropout: 1.0,
+                            })
+
+                        loss = loss.mean()
+                        _accuracy += accuracy
+                        _loss += loss
+                        vcounter += 1
+                        writer.add_summary(sum_str, vcounter)
+
+                        # if FLAGS.track:
+                        #     if accuracy > max_acc[0]:
+                        #         max_acc = [accuracy, score, align, A]
+                        #     if loss < min_loss[0]:
+                        #         min_loss = [loss, score, align, A]
+
+                    print '  Evaluation: time: %4.4f, loss: %.8f, accuracy: %.8f' % \
+                        (time.time() - start_time, _loss / vstep, _accuracy / vstep)
+                    vcounter += int(vstep / 4.0)  # add gap
+
+                    # if FLAGS.track:
+                    #     tracker.info('Validate %d %s' % (gstep, mark))
+                    #     tracker.info('max_accuracy %.4f' % max_acc[0])
+                    #     tracker.info('min_loss %.4f' % min_loss[0])
+                    #     save_track(max_acc[1:], base_name + "_Vacc")
+                    #     save_track(min_loss[1:], base_name + "_Vloss")
+                    #     max_acc = [0, None, None, None]
+                    #     min_loss = [np.inf, None, None, None]
 
 
 

@@ -31,7 +31,9 @@ batch_size = old_flag['batch_size']
 vocab_size = old_flag['vocab_size']
 hidden_size = old_flag['hidden_size']
 activation = old_flag['activation']
-
+attention = old_flag.get('attention', 'concat')
+bidirection = old_flag.get("bidirect", True)
+D = old_flag.get("D", 25)
 
     
 def eval_iter(flist, max_nstep, max_query_step, batch_size, vocab):
@@ -87,26 +89,51 @@ def eval_iter(flist, max_nstep, max_query_step, batch_size, vocab):
         yield s, ds, d_length, qs, q_length, y
 
 
-def run(sess, model, data_iter, steps):
+def run(sess, data_iter, steps):
     running_loss = 0.0
     running_acc = 0.0
+
+    g = sess.graph
+    tensors = []
+    for name in ['loss', 'accuracy', 'document', 'query', 'docu-end', 'quer-end', 'Y', 'dropout_rate']:
+        tensors.append( g.get_tensor_by_name(name+':0') )
+
     for batch_idx, docs, d_end, queries, q_end, y in data_iter:
-        feed={model.document: docs,
-                   model.query: queries,
-                   model.d_end: d_end,
-                   model.q_end: q_end,
-                   model.y: y, 
-                   model.dropout: 1.0,
-                   }
-        cost, accuracy = sess.run([model.loss, model.accuracy], feed)
+        feed={     
+               tensors[2]: docs,
+               tensors[3]: queries,
+               tensors[4]: d_end,
+               tensors[5]: q_end,
+               tensors[6]: y, 
+               tensors[7]: 1.0,
+               }
+
+        cost, accuracy = sess.run(tensors[:2], feed)
         running_acc += accuracy
         running_loss += np.mean(cost)
-        if batch_idx % 5 == 0:
-            print "[%4d/%4d] loss: %.8f, accuracy: %.8f" \
-                        % ( batch_idx, steps, running_loss/float(batch_idx+1), running_acc/float(batch_idx+1))
             
     print 'Overall Loss: %.8f, Overall Accuracy: %.8f' % \
         ( running_loss/float(batch_idx+1), running_acc/float(batch_idx+1) )
+
+
+
+def choose_ckpt(ckpt_dir):
+    ck = tf.train.get_checkpoint_state(ckpt_dir)
+    ckfiles = ck.all_model_checkpoint_paths[::-1]
+
+    for i, p in enumerate(ckfiles):
+        print "%d: %s" %( i,p )
+    idx = raw_input('Choose which to load ')
+
+    if len(idx) == 0:
+        files = [ ck.model_checkpoint_path ]
+    else:
+        idx = map(int, idx.strip(' ').split(' '))
+        files = [ ckfiles[_] for _ in idx ]
+
+    return files
+
+
 
 def main(_):
     l = define_gpu(1)
@@ -129,30 +156,35 @@ def main(_):
 
     # eval
     with tf.Session() as sess:
-        model = AttentiveReader(batch_size=batch_size, size=hidden_size, activation=activation)
-        model.prepare_model()
-        print "Model Build"
+        # model = AttentiveReader(batch_size=batch_size, size=hidden_size, activation=activation,
+        #                         attention=attention, bidirection=bidirection, D=D)
+        # model.prepare_model()
 
-        saver = tf.train.Saver()
         if os.path.isdir(FLAGS.load_path):
-            fname = tf.train.latest_checkpoint(os.path.join(FLAGS.load_path, 'ckpts'))
-            assert fname is not None 
+            ckfiles = choose_ckpt( os.path.join(FLAGS.load_path, 'ckpts') )
+            # assert fname is not None 
         else:
-            fname = FLAGS.load_path
-        print "Loading %s"% fname
-        saver.restore(sess, fname)
+            ckfiles = [ FLAGS.load_path ]
 
-        # test dataset
-        test_iter = eval_iter( test_files, max_nsteps, max_query_length, batch_size, vocab )
-        test_step = test_iter.next()
-        print 'Running on Test data'
-        run(sess, model, test_iter, test_step)
-                
-        # validate dataset
-        validate_iter = eval_iter( validate_files, max_nsteps, max_query_length, batch_size, vocab )
-        validate_step = validate_iter.next()
-        print 'Running on Validate data'
-        run(sess, model, validate_iter, validate_step)
+        meta = ckfiles[0] + '.meta'
+        saver = tf.train.import_meta_graph(meta)
+        'Graph imported'
+
+        for idx, fname in enumerate(ckfiles):
+            print '%d -- %s' % (idx, fname)
+            saver.restore(sess, fname)
+
+            # test dataset
+            test_iter = eval_iter( test_files, max_nsteps, max_query_length, batch_size, vocab )
+            test_step = test_iter.next()
+            print 'Running on Test data'
+            run(sess, test_iter, test_step)
+                    
+            # validate dataset
+            validate_iter = eval_iter( validate_files, max_nsteps, max_query_length, batch_size, vocab )
+            validate_step = validate_iter.next()
+            print 'Running on Validate data'
+            run(sess, validate_iter, validate_step)
 
 if __name__ == '__main__':
     main(0)
