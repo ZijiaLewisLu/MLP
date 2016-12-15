@@ -117,11 +117,6 @@ class AttentiveReader():
 
         self.loss = tf.nn.softmax_cross_entropy_with_logits(
             g, self.y, name='loss')
-        # if self.l2_rate > 0:
-        #     for v in tf.trainable_variables():
-        #         if v.name.endswith('Matrix:0') or v.name.startswith('W'):
-        #             self.loss += self.l2_rate * \
-        #                 tf.nn.l2_loss(v, name="%s-l2loss" % v.name[:-2])
         loss_sum = tf.scalar_summary("T_loss", tf.reduce_mean(self.loss))
 
         correct_prediction = tf.equal(tf.argmax(self.y, 1), tf.argmax(g, 1))
@@ -159,7 +154,7 @@ class AttentiveReader():
         self.gras = [g for g, v in self.grad_and_var]
 
         if self.attention == 'local':
-            self.train_sum = tf.merge_summary([loss_sum, acc_sum, zf, atten_hist])
+            self.train_sum = tf.merge_summary([loss_sum, acc_sum])
         else:
             self.train_sum = tf.merge_summary([loss_sum, acc_sum])
 
@@ -217,8 +212,18 @@ class AttentiveReader():
         elif _type == 'local':
             # r = self.local_attention(d_t, u, attention='concat')
             from attention import local_attention
-            content_func = lambda x, y : self.concat_attention(x,y, return_attention=auxi_arg)
-            r, atten_hist = local_attention(u, d_t, window_size=self.D, content_function=content_func)
+
+            WT_dm = tf.get_variable('WT_dm', [2 * self.size, self.size])
+            WT_um = tf.get_variable('WT_um', [2 * self.size, self.size])
+            _u = tf.matmul( u, WT_um )
+            # _u = tf.matmul( u, W_ym )
+            _dt = tf.reduce_max( d_t, 1, name='local_dt') # N, 2H
+            _dt = tf.matmul( _dt, WT_dm )
+            decoder_state = tf.concat( 1, [_u, _dt] )
+
+            content_func = lambda x, y : self.concat_attention(x, u, return_attention=auxi_arg)
+            r, atten_hist = local_attention( decoder_state , d_t, 
+                            window_size=self.D, content_function=content_func)
         else:
             raise ValueError(_type)
 
@@ -376,7 +381,7 @@ class AttentiveReader():
             running_acc = 0
             running_loss = 0
             for batch_idx, docs, d_end, queries, q_end, y in train_iter:
-                _, summary_str, cost, accuracy, gs = sess.run([self.train_op, self.train_sum, self.loss, self.accuracy, self.gras],
+                _, summary_str, cost, accuracy = sess.run([self.train_op, self.train_sum, self.loss, self.accuracy],
                                                           feed_dict={self.document: docs,
                                                                      self.query: queries,
                                                                      self.d_end: d_end,

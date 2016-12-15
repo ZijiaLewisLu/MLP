@@ -72,8 +72,8 @@ for data in titer:
     d_len = data[2]
 
     sys.stdout.write( '\r%d' % idx )
-    if idx == 3:
-        break
+    # if idx == 300:
+    #    break
 
     acc, prob, atten = step(data, M, sess, fetch)
     c, p, both = analyse(doc, ans, atten)
@@ -94,7 +94,7 @@ for data in titer:
     label = c + p
     LABEL.append(label)
 
-print len(DATA)
+# print len(DATA)
 
 d = np.concatenate( DATA )
 l = np.concatenate( LABEL )
@@ -104,7 +104,7 @@ print d.shape
 print l.shape
 print dl.shape
 
-with h5py.File('_Data_.h5', 'w') as hf:
+with h5py.File('Data_Big.h5', 'w') as hf:
     hf.create_dataset('data', data=d)
     hf.create_dataset('dlen', data=dl)
     hf.create_dataset('label', data=l)
