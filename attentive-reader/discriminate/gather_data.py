@@ -27,7 +27,9 @@ ckpt = os.path.join(log_path, 'ckpts')
 flags = os.path.join(log_path, 'Flags.js')
 with open(flags, 'r') as f:
     old_flag = json.load(f)
-# for k in old_flag: print '%s: %s'%( k, old_flag[k])
+
+for k in old_flag: print '%s: %s'%( k, old_flag[k])
+
 max_nsteps=1000
 max_query_length=20
 batch_size = old_flag['batch_size']
@@ -43,6 +45,12 @@ tf.reset_default_graph()
 g = tf.get_default_graph()
 sess = tf.Session()
 
+titer, tstep, viter, vstep = load_dataset('../data', 'cnn', 
+                vocab_size, batch_size, max_nsteps, max_query_length, shuffle_data=False)
+
+if tstep == 0:
+    import ipdb; ipdb.set_trace()
+
 which = -1
 saver = tf.train.import_meta_graph(ckfiles[which]+'.meta')
 saver.restore(sess, ckfiles[which])
@@ -50,8 +58,7 @@ M = dig_tensors(g)
 logit = tf.nn.softmax(M.score)
 print 'Load!'
 
-titer, tstep, viter, vstep = load_dataset('data', 'cnn', 
-                vocab_size, batch_size, max_nsteps, max_query_length, shuffle_data=False)
+
 
 DATA = []
 LABEL = []
@@ -67,6 +74,7 @@ for data in titer:
     sys.stdout.write( '\r%d' % idx )
     if idx == 3:
         break
+
     acc, prob, atten = step(data, M, sess, fetch)
     c, p, both = analyse(doc, ans, atten)
 
@@ -86,6 +94,8 @@ for data in titer:
     label = c + p
     LABEL.append(label)
 
+print len(DATA)
+
 d = np.concatenate( DATA )
 l = np.concatenate( LABEL )
 dl = np.concatenate( DLEN )
@@ -94,7 +104,7 @@ print d.shape
 print l.shape
 print dl.shape
 
-with h5py.File('Data.h5', 'w') as hf:
+with h5py.File('_Data_.h5', 'w') as hf:
     hf.create_dataset('data', data=d)
     hf.create_dataset('dlen', data=dl)
-    hf.create_dataset('label', data=label)
+    hf.create_dataset('label', data=l)
