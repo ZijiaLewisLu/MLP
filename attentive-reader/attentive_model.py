@@ -89,17 +89,7 @@ class AttentiveReader():
         self.u = u
 
         # attention
-        if self.attention == 'concat':
-            r = self.concat_attention(d_t, u)
-        elif self.attention == 'bilinear':
-            r = self.bilinear_attention(d_t, u)
-        elif self.attention == 'local':
-            # r = self.local_attention(d_t, u, attention='concat')
-            from attention import local_attention
-            content_func = lambda x, y : self.concat_attention(x,y, return_attention=True)
-            r, atten_hist = local_attention(u, d_t, window_size=self.D, content_function=content_func)
-        else:
-            raise ValueError(self.attention)
+        r = self.apply_attention(self.attention, d_t, u, 'concat')
 
         # predict
         W_rg = tf.get_variable("W_rg", [2 * self.size, self.size])
@@ -218,6 +208,21 @@ class AttentiveReader():
                 self.learning_rate, momentum=self.momentum, decay=self.decay, name='optimizer')
         return optim
 
+    def apply_attention(self, _type, d_t, u, auxi_arg):
+
+        if _type == 'concat':
+            r = self.concat_attention(d_t, u)
+        elif _type == 'bilinear':
+            r = self.bilinear_attention(d_t, u)
+        elif _type == 'local':
+            # r = self.local_attention(d_t, u, attention='concat')
+            from attention import local_attention
+            content_func = lambda x, y : self.concat_attention(x,y, return_attention=auxi_arg)
+            r, atten_hist = local_attention(u, d_t, window_size=self.D, content_function=content_func)
+        else:
+            raise ValueError(_type)
+
+        return r
 
     def concat_attention(self, d_t, u, return_attention=False):
         W_ym = tf.get_variable('W_ym', [2 * self.size, self.size])
@@ -260,6 +265,9 @@ class AttentiveReader():
         else:
             r = tf.reduce_sum(atten * d, 1, name='r')
             return r
+
+    # def cheap_attention(self, d_t, u, return_attention=False):
+
 
     def local_attention(self, d_t, u, attention='bilinear'):
 

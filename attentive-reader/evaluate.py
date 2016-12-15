@@ -7,37 +7,35 @@ from utils import data_to_token_ids, define_gpu
 import json
 import numpy as np
 from attentive_model import AttentiveReader
+from collections import namedtuple, Counter
+from sklearn.manifold import TSNE
+from matplotlib import pyplot as plt
+import sys
 
-flags = tf.app.flags
-flags.DEFINE_integer("data_size", None, "")
-flags.DEFINE_string("data_dir", "data", "The name of data directory [data]")
-flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
-flags.DEFINE_string("load_path", None, "The path to old model. [None]")
-FLAGS = flags.FLAGS
+TensorName = ['loss', 'accuracy', 'attention', 'document',
+              'query', 'docu-end', 'quer-end', 'Y', 'dropout_rate',
+              'g_x_W']
+# All_Tensor = Tensor_feed + Tensor_fetch
+name_attr_map = {
+    'loss': 'loss',
+    'accuracy': 'accuracy',
+    'attention': 'attention',
+    'query': 'query',
+    'document': 'document',
+    'docu-end': 'd_end',
+    'quer-end': 'q_end',
+    'Y': 'y',
+    'dropout_rate': 'dropout',
+    'g_x_W': 'score'
+}
+
+AttrName = map(name_attr_map.get, TensorName)
+
+Tensor = namedtuple('Tensor', ' '.join(AttrName))
 
 
-if os.path.isdir(FLAGS.load_path):
-    with open(os.path.join(FLAGS.load_path, 'Flags.js'), 'r') as f:
-        old_flag = json.load(f)
-else:
-    js_path = os.path.join(FLAGS.load_path, '../../Flags.js')
-    js_path = os.path.abspath(js_path)
-    with open(js_path, 'r') as f:
-        old_flag = json.load(f)
-
-max_nsteps=1000
-max_query_length=20
-batch_size = old_flag['batch_size']
-vocab_size = old_flag['vocab_size']
-hidden_size = old_flag['hidden_size']
-activation = old_flag['activation']
-attention = old_flag.get('attention', 'concat')
-bidirection = old_flag.get("bidirect", True)
-D = old_flag.get("D", 25)
-
-    
 def eval_iter(flist, max_nstep, max_query_step, batch_size, vocab):
-    
+
     steps = np.ceil(len(flist) / float(batch_size))
     steps = int(steps)
     yield steps
@@ -62,7 +60,7 @@ def eval_iter(flist, max_nstep, max_query_step, batch_size, vocab):
         qs.fill(0)
 
         for idx, fname in enumerate(files):
-            rslt  =  data_to_token_ids(fname, None, vocab, save=False)
+            rslt = data_to_token_ids(fname, None, vocab, save=False)
             document = rslt[2].strip('\n')
             question = rslt[4].strip('\n')
             answer = rslt[6].strip('\n')
@@ -89,32 +87,14 @@ def eval_iter(flist, max_nstep, max_query_step, batch_size, vocab):
         yield s, ds, d_length, qs, q_length, y
 
 
-def run(sess, data_iter, steps):
-    running_loss = 0.0
-    running_acc = 0.0
+def dig_tensors(graph, targ=TensorName, map=name_attr_map):
+    tensors = {}
+    for name in targ:
+        tensors[name_attr_map.get(
+            name, name)] = graph.get_tensor_by_name(name + ':0')
 
-    g = sess.graph
-    tensors = []
-    for name in ['loss', 'accuracy', 'document', 'query', 'docu-end', 'quer-end', 'Y', 'dropout_rate']:
-        tensors.append( g.get_tensor_by_name(name+':0') )
-
-    for batch_idx, docs, d_end, queries, q_end, y in data_iter:
-        feed={     
-               tensors[2]: docs,
-               tensors[3]: queries,
-               tensors[4]: d_end,
-               tensors[5]: q_end,
-               tensors[6]: y, 
-               tensors[7]: 1.0,
-               }
-
-        cost, accuracy = sess.run(tensors[:2], feed)
-        running_acc += accuracy
-        running_loss += np.mean(cost)
-            
-    print 'Overall Loss: %.8f, Overall Accuracy: %.8f' % \
-        ( running_loss/float(batch_idx+1), running_acc/float(batch_idx+1) )
-
+    tr = Tensor(**tensors)
+    return tr
 
 
 def choose_ckpt(ckpt_dir):
@@ -122,69 +102,218 @@ def choose_ckpt(ckpt_dir):
     ckfiles = ck.all_model_checkpoint_paths[::-1]
 
     for i, p in enumerate(ckfiles):
-        print "%d: %s" %( i,p )
+        print "%d: %s" % (i, p)
     idx = raw_input('Choose which to load ')
 
     if len(idx) == 0:
-        files = [ ck.model_checkpoint_path ]
+        files = [ck.model_checkpoint_path]
     else:
         idx = map(int, idx.strip(' ').split(' '))
-        files = [ ckfiles[_] for _ in idx ]
+        files = [ckfiles[_] for _ in idx]
 
     return files
 
 
+def create_revert(revocab):
+    def revert(ids, rm_pad=True):
+        words = [revocab[_] for _ in ids]
+        if rm_pad:
+            words = [_ for _ in words if _ != '<PAD>']
+        return words
+    return revert
 
-def main(_):
-    l = define_gpu(1)
-    print 'Using GPU %d' % l[0]
+
+def visualize_emb(data, emd, vocab=None, transform=True, tsne=None):
+
+    if transform:
+        ids = [vocab[_] for _ in data]
+    else:
+        ids = data
+
+    rep = emd[ids]
+    if tsne is None:
+        tsne = TSNE()
+    e_space = tsne.fit_transform(rep)
+    plt.plot(e_space[:, 1], e_space[:, 0], "ro")
+    for index, word in enumerate(data):
+        plt.annotate(word, xy=(e_space[index, 1], e_space[index, 0]),
+                     xytext=(-5, 5),
+                     textcoords='offset points', ha='left', va='bottom',
+                     bbox=dict(boxstyle='round,pad=0.5',
+                               fc='yellow', alpha=0.5),
+                     arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+
+
+def step(data, M, sess, fetch):
+    idx, doc, d_end, que, q_end, y = data
+    feed = {M.document: doc,
+            M.query: que,
+            M.d_end: d_end,
+            M.q_end: q_end,
+            M.y: y,
+            M.dropout: 1.0,
+            }
+    return sess.run(fetch, feed)
+
+
+def Topk(array, k):
+    top = np.argpartition(-array, k)[:k]
+    pair = sorted(zip(array[top], top), key=lambda x: x[0], reverse=True)
+    return [_[1] for _ in pair]
+
+
+def analyse(doc, answer, attention):
+    batch_size = doc.shape[0]
+    att_pred = attention.argmax(1)
+    ap_ids = doc[range(batch_size), att_pred].astype(np.int)
+
+    _common_ids = []
+    for i, each_sample in enumerate(attention):
+        top = Topk(each_sample, 20)
+        top_words = doc[i][top]
+        ct = Counter(top_words)
+        _common_ids.append(ct.most_common(1)[0][0])
+    common_ids = np.array(_common_ids)
+
+    aid = answer.argmax(1)
+    # pid = score_or_prob.argmax(1)
+
+    cright = common_ids == aid
+    pright = ap_ids == aid
+    both = np.logical_or(cright, pright)
+    # correct = pid == aid
+    return pright, cright, both
+
+def test_on(_iter, M, sess, fix_attention=False):
+
+    running_acc = 0.0
+    running_loss = 0.0
+    
+    point_acc = 0.0
+    common_acc = 0.0
+    both_acc = 0.0
+
+    counter = 0
+
+    fetch = [M.accuracy, M.loss, M.attention, M.score]
+
+    # sys.stdout.write('\r%d' % counter)
+
+    while True:
+        counter += 1
+        sys.stdout.write('\r%d' % counter)
+        try:
+            data = _iter.next()
+            accuracy, loss, attention, score = step(data, M, sess, fetch)
+            running_loss += loss.mean()
+            running_acc += accuracy
+
+            if fix_attention:
+                attention = attention[:, :, 0]
+
+            doc = data[1]
+            answer = data[-1]
+            point, common, both = analyse(doc, answer, attention)
+            point_acc += point.mean()
+            common_acc += common.mean()
+            both_acc   += both.mean()
+
+        except StopIteration:
+            print
+            print 'Overall Loss: %.8f, Overall Accuracy: %.8f' % \
+                (running_loss / counter, running_acc / counter)
+            print 'AttenAcc Point: %.8f, Common: %.8f, Both: %.8f' \
+                            % (point_acc/counter, common_acc/counter, both_acc/counter)
+            break
+
+
+def main(FLAGS):
+    # l = define_gpu(1)
+    # print 'Using GPU %d' % l[0]
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu)
 
     # get data
-    test_path = os.path.join( FLAGS.data_dir, FLAGS.dataset, 'questions', 'test' )
-    validate_path = os.path.join( FLAGS.data_dir, FLAGS.dataset, 'questions', 'validation' )
+    test_path = os.path.join(
+        FLAGS.data_dir, FLAGS.dataset, 'questions', 'test')
+    validate_path = os.path.join(
+        FLAGS.data_dir, FLAGS.dataset, 'questions', 'validation')
     test_files = glob(os.path.join(test_path, "*.question"))
     validate_files = glob(os.path.join(validate_path, "*.question"))
     if FLAGS.data_size < len(validate_files):
         validate_files = validate_files[:FLAGS.data_size]
     if FLAGS.data_size < len(test_files):
         test_files = test_files[:FLAGS.data_size]
-     
-    # get vocab   
-    vocab_path = os.path.join( FLAGS.data_dir, FLAGS.dataset, '%s.vocab%d'%(FLAGS.dataset, vocab_size) )
+
+    # get vocab
+    vocab_path = os.path.join(
+        FLAGS.data_dir, FLAGS.dataset, '%s.vocab%d' % (FLAGS.dataset, vocab_size))
     with open(vocab_path, 'r') as f:
         vocab = pickle.load(f)
 
     # eval
     with tf.Session() as sess:
-        # model = AttentiveReader(batch_size=batch_size, size=hidden_size, activation=activation,
-        #                         attention=attention, bidirection=bidirection, D=D)
-        # model.prepare_model()
 
         if os.path.isdir(FLAGS.load_path):
-            ckfiles = choose_ckpt( os.path.join(FLAGS.load_path, 'ckpts') )
-            # assert fname is not None 
+            ckfiles = choose_ckpt(os.path.join(FLAGS.load_path, 'ckpts'))
+            # assert fname is not None
         else:
-            ckfiles = [ FLAGS.load_path ]
+            ckfiles = [FLAGS.load_path]
 
         meta = ckfiles[0] + '.meta'
         saver = tf.train.import_meta_graph(meta)
-        'Graph imported'
+        print 'Graph imported'
 
         for idx, fname in enumerate(ckfiles):
             print '%d -- %s' % (idx, fname)
             saver.restore(sess, fname)
 
+            M = dig_tensors(sess.graph)
+
             # test dataset
-            test_iter = eval_iter( test_files, max_nsteps, max_query_length, batch_size, vocab )
+            test_iter = eval_iter(test_files, max_nsteps,
+                                  max_query_length, batch_size, vocab)
             test_step = test_iter.next()
             print 'Running on Test data'
-            run(sess, test_iter, test_step)
-                    
+            test_on(test_iter, M, sess)
+
             # validate dataset
-            validate_iter = eval_iter( validate_files, max_nsteps, max_query_length, batch_size, vocab )
+            validate_iter = eval_iter(
+                validate_files, max_nsteps, max_query_length, batch_size, vocab)
             validate_step = validate_iter.next()
             print 'Running on Validate data'
-            run(sess, validate_iter, validate_step)
+            test_on(validate_iter, M, sess)
+
 
 if __name__ == '__main__':
-    main(0)
+
+    flags = tf.app.flags
+    flags.DEFINE_integer("data_size", None, "")
+    flags.DEFINE_integer("gpu", 0, "")
+
+    flags.DEFINE_string("data_dir", "data",
+                        "The name of data directory [data]")
+    flags.DEFINE_string(
+        "dataset", "cnn", "The name of dataset [cnn, dailymail]")
+    flags.DEFINE_string("load_path", None, "The path to old model. [None]")
+    FLAGS = flags.FLAGS
+
+    if os.path.isdir(FLAGS.load_path):
+        with open(os.path.join(FLAGS.load_path, 'Flags.js'), 'r') as f:
+            old_flag = json.load(f)
+    else:
+        js_path = os.path.join(FLAGS.load_path, '../../Flags.js')
+        js_path = os.path.abspath(js_path)
+        with open(js_path, 'r') as f:
+            old_flag = json.load(f)
+
+    max_nsteps = 1000
+    max_query_length = 20
+    batch_size = old_flag['batch_size']
+    vocab_size = old_flag['vocab_size']
+    hidden_size = old_flag['hidden_size']
+    activation = old_flag['activation']
+    attention = old_flag.get('attention', 'concat')
+    bidirection = old_flag.get("bidirect", True)
+    D = old_flag.get("D", 25)
+
+    main(FLAGS)
