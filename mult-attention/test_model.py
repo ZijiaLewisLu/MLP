@@ -3,7 +3,7 @@ from tensorflow.python.ops import rnn_cell
 from base import BaseModel
 
 
-class BoW_Attention(BaseModel):
+class Attention(BaseModel):
 
     def __init__(self, batch_size, sN, sL, qL,
                  vocab_size, embed_size, hidden_size,
@@ -33,10 +33,6 @@ class BoW_Attention(BaseModel):
 
         self.create_placeholder(batch_size, sN, sL, qL)
 
-        # feat = self.stat_attention(hidden_size)
-
-        # assert False
-
         global_step = tf.Variable(0, name='global_step', trainable=False)
         learning_rate = tf.train.exponential_decay(
             learning_rate, global_step, 1000, 0.95)
@@ -50,7 +46,6 @@ class BoW_Attention(BaseModel):
             self.emb, self.query, name='embed_q')  # N,qL,E
         self.embed_sum = tf.histogram_summary("embed", self.emb)
 
-        # query_token = tf.unpack(embed_q, axis=1)
         query_token = embed_q
         with tf.variable_scope("query_represent"):
             q_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
@@ -64,21 +59,21 @@ class BoW_Attention(BaseModel):
 
             ffinal = tf.reduce_max(q_rep[0], [1])
             bfinal = tf.reduce_max(q_rep[1], [1])
-            q_rep = tf.concat(1, [ffinal, bfinal])
+            # q_rep = tf.concat(1, [ffinal, bfinal])
+            q_rep = ffinal + bfinal
 
         with tf.name_scope('BoW'):
-            # p_lens = tf.unpack(self.p_len, axis=1) # [N] * sN
-            # masks = []
-            # for _ in p_lens:
-            #     m = tf.sequence_mask(_, sL, dtype=tf.float32)
-            #     masks.append(m)
-            # masks = tf.pack(masks, 1)  # N, sN, sL
-            # masks = tf.expand_dims(masks, -1, name='masks')
-            # embed_p = embed_p * masks
-            # bow_p = tf.reduce_sum(embed_p, 2, name='bow')  # N, sN, E
-            print '  Using tf_idf weight'
-            idf = tf.expand_dims( self.p_idf, -1 )
-            bow_p = tf.reduce_sum( embed_p*idf, 2, name='bow' )
+            p_lens = tf.unpack(self.p_len, axis=1) # [N] * sN
+            masks = []
+            for _ in p_lens:
+                m = tf.sequence_mask(_, sL, dtype=tf.float32)
+                masks.append(m)
+            masks = tf.pack(masks, 1)  # N, sN, sL
+            # self.mask_print = tf.Print(
+            #     masks, [masks], message='bow mask', first_n=50, name='printBowMask')
+            masks = tf.expand_dims(masks, -1, name='masks')
+            embed_p = embed_p * masks
+            bow_p = tf.reduce_sum(embed_p, 2, name='bow')  # N, sN, E
 
         sN_mask = tf.to_float(self.p_len > 0, name='sN_mask')  # N, sN
         sN_count = tf.reduce_sum(sN_mask, 1)
@@ -100,7 +95,8 @@ class BoW_Attention(BaseModel):
                 # initial_state_fw=final_state_fw,
                 # initial_state_bw=final_state_bw,
             )
-            p_rep = tf.concat(2, p_rep)
+            # p_rep = tf.concat(2, p_rep)
+            p_rep = p_rep[0] + p_rep[1]
 
         with tf.name_scope('REP_dropout'):
             q_rep = tf.nn.dropout(q_rep, self.dropout)
@@ -108,7 +104,7 @@ class BoW_Attention(BaseModel):
 
         p_rep = tf.unpack(p_rep, axis=1)
         atten = self.apply_attention(
-            attention_type, hidden_size, sN, p_rep, q_rep, layer=attention_layer)
+            attention_type, hidden_size/2, sN, p_rep, q_rep, layer=attention_layer)
 
         atten = atten - tf.reduce_min(atten, [1], keep_dims=True)
         atten = tf.mul(atten, sN_mask, name='unnormalized_attention')

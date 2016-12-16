@@ -24,6 +24,7 @@ class AttentiveReader():
                  attention='concat',
                  bidirection=True,
                  D=25,
+                 max_norm=6,
                  ):
 
         self.size = size
@@ -41,6 +42,7 @@ class AttentiveReader():
         self.attention = attention
         self.bidirection = bidirection
         self.D = D
+        self.max_norm=max_norm
 
         self.saver = None
 
@@ -128,6 +130,16 @@ class AttentiveReader():
         self.optim = self.get_optimizer()
 
         self.grad_and_var = self.optim.compute_gradients(self.loss)
+        with tf.name_scope('clip_norm'):
+            new = []
+            for _g, v in self.grad_and_var:
+                if _g is not None:
+                    new.append( (tf.clip_by_norm(_g, self.max_norm), v) )
+                else:
+                    new.append( (_g,v) )
+
+            self.grad_and_var = new                            
+
         if not parallel:
             self.train_op = self.optim.apply_gradients(
                 self.grad_and_var, name='train_op')
@@ -151,7 +163,8 @@ class AttentiveReader():
 
         self.vname = [v.name for g, v in self.grad_and_var]
         self.vars = [v for g, v in self.grad_and_var]
-        self.gras = [g for g, v in self.grad_and_var]
+        self.gras = [g for g, v in self.grad_and_var if g is not None]
+        self.gname = [ v.name for g, v in self.grad_and_var if g is not None ]
 
         if self.attention == 'local':
             self.train_sum = tf.merge_summary([loss_sum, acc_sum])
@@ -381,14 +394,17 @@ class AttentiveReader():
             running_acc = 0
             running_loss = 0
             for batch_idx, docs, d_end, queries, q_end, y in train_iter:
-                _, summary_str, cost, accuracy = sess.run([self.train_op, self.train_sum, self.loss, self.accuracy],
-                                                          feed_dict={self.document: docs,
-                                                                     self.query: queries,
-                                                                     self.d_end: d_end,
-                                                                     self.q_end: q_end,
-                                                                     self.y: y,
-                                                                     self.dropout: dropout_rate,
-                                                                     })
+                _, summary_str, cost, accuracy, gs = sess.run(
+                        [self.train_op, self.train_sum, self.loss, self.accuracy,
+                            self.gras,
+                        ],
+                        feed_dict={ self.document: docs,
+                                    self.query: queries,
+                                    self.d_end: d_end,
+                                    self.q_end: q_end,
+                                    self.y: y,
+                                    self.dropout: dropout_rate,
+                                     })
 
                 writer.add_summary(summary_str, counter)
                 running_acc += accuracy
@@ -401,10 +417,10 @@ class AttentiveReader():
                 counter += 1
 
                 if False:
-                    for v, g in zip(self.vars, gs):
+                    for name, g in zip(self.gname, gs):
                         _n = norm(g)
-                        if _n > 5:
-                            print 'EXPLODE %s %f' % ( v.name, _n )
+                        if _n > self.max_norm:
+                            print 'EXPLODE %s %f' % ( name, _n )
 
                 if (counter + 1) % eval_every == 0:
                     # validate

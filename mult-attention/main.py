@@ -22,7 +22,6 @@ flags.DEFINE_float("save_every", 500.0, "Eval every step")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
 flags.DEFINE_string("data_dir", "data/squad", "Data")
 flags.DEFINE_string("load_path", None, "The path to old model.")
-flags.DEFINE_boolean("track", False, "whether to track performance")
 
 flags.DEFINE_integer("epoch", 60, "Epoch to train")
 flags.DEFINE_integer("vocab_size", 60000, "The size of vocabulary")
@@ -54,9 +53,7 @@ qL = 15
 stop_id = 2
 val_rate = 0.05
 glove_dir = './data/glove_wiki'
-idf_path  = './data/squad/train_idf_data.pk'
-
-
+idf_path  = './data/squad/train_tfidf.pk'
 
 
 def initialize(sess, saver, load_path=None):
@@ -216,15 +213,17 @@ def main(_):
         print '  Start Training'
         tracker.info('  So you know I am working:)')
         sys.stdout.flush()
+        T_size = len(train_data)/4
 
         for epoch_idx in range(FLAGS.epoch):
 
             order = range(len(train_data))
+            order = np.random.choice(order, size=T_size)
             np.random.shuffle(order)
-            train_data = [ train_data[i] for i in order ]
-            train_idf  = [ train_idf[i]  for i in order ]
+            t_data = [ train_data[i] for i in order ]
+            t_idf  = [ train_idf[i]  for i in order ]
             
-            titer = batchIter(FLAGS.batch_size, train_data, train_idf,
+            titer = batchIter(FLAGS.batch_size, t_data, t_idf,
                               sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
             tstep = titer.next()
 
@@ -276,12 +275,6 @@ def main(_):
                 #         tracker.warning('%s, gradient norm: %f, global_step:%d' % (
                 #             model.origin_gv[i][1].name, nm, gstep))
 
-                # if FLAGS.track:
-                #     if accuracy > max_acc[0]:
-                #         max_acc = [accuracy, score, align, A]
-                #     if loss < min_loss[0]:
-                #         min_loss = [loss, score, align, A]
-
                 if (gstep + 1) % 20 == 0:
                     print "%d Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f" \
                         % (gstep, epoch_idx, batch_idx, tstep, time.time() - start_time, running_loss / 20.0, running_acc / 20.0)
@@ -296,18 +289,6 @@ def main(_):
                     saver.save(sess, fname, global_step=gstep)
 
                 if (gstep + 1) % FLAGS.eval_every == 0:
-
-                    # if FLAGS.track:
-                    #     mark = str(time.time())
-                    #     base_name = os.path.join(track_dir, mark)
-
-                    #     tracker.info('Train %d %s' % (gstep, mark))
-                    #     tracker.info('max_accuracy %.4f' % max_acc[0])
-                    #     tracker.info('min_loss %.4f' % min_loss[0])
-                    #     save_track(max_acc[1:], base_name + "_Tacc")
-                    #     save_track(min_loss[1:], base_name + "_Tloss")
-                    #     max_acc = [0, None, None, None]
-                    #     min_loss = [np.inf, None, None, None]
 
                     _accuracy = 0.0
                     _loss = 0.0
@@ -338,24 +319,9 @@ def main(_):
                         vcounter += 1
                         writer.add_summary(sum_str, vcounter)
 
-                        # if FLAGS.track:
-                        #     if accuracy > max_acc[0]:
-                        #         max_acc = [accuracy, score, align, A]
-                        #     if loss < min_loss[0]:
-                        #         min_loss = [loss, score, align, A]
-
                     print '  Evaluation: time: %4.4f, loss: %.8f, accuracy: %.8f' % \
                         (time.time() - start_time, _loss / vstep, _accuracy / vstep)
                     vcounter += int(vstep / 4.0)  # add gap
-
-                    # if FLAGS.track:
-                    #     tracker.info('Validate %d %s' % (gstep, mark))
-                    #     tracker.info('max_accuracy %.4f' % max_acc[0])
-                    #     tracker.info('min_loss %.4f' % min_loss[0])
-                    #     save_track(max_acc[1:], base_name + "_Vacc")
-                    #     save_track(min_loss[1:], base_name + "_Vloss")
-                    #     max_acc = [0, None, None, None]
-                    #     min_loss = [np.inf, None, None, None]
 
 
 
