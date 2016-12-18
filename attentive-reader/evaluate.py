@@ -184,6 +184,53 @@ def analyse(doc, answer, attention):
     # correct = pid == aid
     return pright, cright, both
 
+def stat(atten, doc, topk):
+    top_index = Topk(atten, topk) # indexes
+    top_atten = atten[top_index]
+    top_wordid = doc[top_index]
+    
+#     ct = Counter(top_wordid)
+    entities = set(top_wordid)
+    stat = []
+    for e in entities:
+        count = 0
+        _p = 0.0
+        for i, wid in enumerate(top_wordid):
+            if wid == e:
+                count += 1
+                _p += top_atten[i]
+        stat.append([ e ,count, _p])
+    stat = sorted(stat, key=lambda x: x[2], reverse=True)
+    return stat
+
+def extract_and_compare(_doc, score, atten, topk=20):
+    N = _doc.shape[0]
+    max_right = []
+    pid = score.argmax(1)
+    for idx in range(N):
+        doc = _doc[idx]
+        att = atten[idx]
+        new = stat(att, doc, topk)[0][0]
+        max_right.append( new == pid[idx] )
+    max_right = np.array(max_right)
+    return max_right
+
+def merge_prediction(attention_score, document, thres=0.18, topk=20):
+    predict = []
+    for atten, doc in zip(attention_score, document):
+        info = stat(atten, doc, topk)
+        scr = info[0][2]
+        if scr >= thres:
+            predict.append(info[0][0])
+        else:
+            max_appear = max( [_[1] for _ in info] )
+            for _ in info:
+                if _[1] == max_appear:
+                    predict.append( _[0])
+                    break
+    return np.array(predict).astype(np.int) 
+
+
 def test_on(_iter, M, sess, fix_attention=False):
 
     running_acc = 0.0
@@ -192,6 +239,8 @@ def test_on(_iter, M, sess, fix_attention=False):
     point_acc = 0.0
     common_acc = 0.0
     both_acc = 0.0
+    merge_acc = 0.0
+    # max_acc = 0.0
 
     counter = 0
 
@@ -214,9 +263,14 @@ def test_on(_iter, M, sess, fix_attention=False):
             doc = data[1]
             answer = data[-1]
             point, common, both = analyse(doc, answer, attention)
+            # max_confirm = extract_and_compare(doc, score, attention)
+            merge = merge_prediction(attention, doc, thres=0.186, topk=10)
+
             point_acc += point.mean()
             common_acc += common.mean()
             both_acc   += both.mean()
+            
+            merge_acc += (merge == answer.argmax(1)).mean()
 
         except StopIteration:
             print
@@ -224,6 +278,7 @@ def test_on(_iter, M, sess, fix_attention=False):
                 (running_loss / counter, running_acc / counter)
             print 'AttenAcc Point: %.8f, Common: %.8f, Both: %.8f' \
                             % (point_acc/counter, common_acc/counter, both_acc/counter)
+            print '  Merge Acc Rate %.8f' % (merge_acc/counter)
             break
 
 

@@ -53,7 +53,8 @@ qL = 15
 stop_id = 2
 val_rate = 0.05
 glove_dir = './data/glove_wiki'
-idf_path  = './data/squad/train_tfidf.pk'
+idf_path  = './data/squad/train_idf_data.pk'
+
 
 
 def initialize(sess, saver, load_path=None):
@@ -197,10 +198,9 @@ def main(_):
             json.dump(FLAGS.__flags, f, indent=4)
         print '  Writing log to %s' % log_dir
 
-        tracker = create_logger(log_dir, to_console=True)
-        if FLAGS.track:
-            track_dir = os.path.join(log_dir, 'track')
-            os.makedirs(track_dir)
+        # tracker = create_logger(log_dir, to_console=True)
+        # track_dir = os.path.join(log_dir, 'track')
+        # os.makedirs(track_dir)
 
         # counter = 1
         vcounter = 1
@@ -211,7 +211,7 @@ def main(_):
         # max_acc = [0, None, None, None]
         # min_loss = [np.inf, None, None, None]
         print '  Start Training'
-        tracker.info('  So you know I am working:)')
+        # tracker.info('  So you know I am working:)')
         sys.stdout.flush()
         T_size = len(train_data)/4
 
