@@ -87,11 +87,11 @@ def eval_iter(flist, max_nstep, max_query_step, batch_size, vocab):
         yield s, ds, d_length, qs, q_length, y
 
 
-def dig_tensors(graph, targ=TensorName, map=name_attr_map):
-    tensors = {}
+def dig_tensors(graph, targ=TensorName, _map=name_attr_map):
+    tensors = { k: None for k in _map.values()}
+
     for name in targ:
-        tensors[name_attr_map.get(
-            name, name)] = graph.get_tensor_by_name(name + ':0')
+        tensors[_map.get(name, name)] = graph.get_tensor_by_name(name + ':0')
 
     tr = Tensor(**tensors)
     return tr
@@ -231,7 +231,7 @@ def merge_prediction(attention_score, document, thres=0.18, topk=20):
     return np.array(predict).astype(np.int) 
 
 
-def test_on(_iter, M, sess, fix_attention=False):
+def test_on(_iter, M, sess, fix_attention=False, pure=False):
 
     running_acc = 0.0
     running_loss = 0.0
@@ -244,7 +244,10 @@ def test_on(_iter, M, sess, fix_attention=False):
 
     counter = 0
 
-    fetch = [M.accuracy, M.loss, M.attention, M.score]
+    if pure:
+        fetch = [M.accuracy, M.loss, M.score]
+    else:
+        fetch = [M.accuracy, M.loss, M.attention, M.score]
 
     # sys.stdout.write('\r%d' % counter)
 
@@ -253,32 +256,38 @@ def test_on(_iter, M, sess, fix_attention=False):
         sys.stdout.write('\r%d' % counter)
         try:
             data = _iter.next()
-            accuracy, loss, attention, score = step(data, M, sess, fetch)
+            if pure:
+                accuracy, loss, score = step(data, M, sess, fetch)
+            else:
+                accuracy, loss, attention, score = step(data, M, sess, fetch)
+                if fix_attention:
+                    attention = attention[:, :, 0]
+
+                doc = data[1]
+                answer = data[-1]
+                point, common, both = analyse(doc, answer, attention)
+                # max_confirm = extract_and_compare(doc, score, attention)
+                merge = merge_prediction(attention, doc, thres=0.186, topk=10)
+
+                point_acc += point.mean()
+                common_acc += common.mean()
+                both_acc   += both.mean()
+                
+                merge_acc += (merge == answer.argmax(1)).mean()
+
             running_loss += loss.mean()
             running_acc += accuracy
-
-            if fix_attention:
-                attention = attention[:, :, 0]
-
-            doc = data[1]
-            answer = data[-1]
-            point, common, both = analyse(doc, answer, attention)
-            # max_confirm = extract_and_compare(doc, score, attention)
-            merge = merge_prediction(attention, doc, thres=0.186, topk=10)
-
-            point_acc += point.mean()
-            common_acc += common.mean()
-            both_acc   += both.mean()
-            
-            merge_acc += (merge == answer.argmax(1)).mean()
 
         except StopIteration:
             print
             print 'Overall Loss: %.8f, Overall Accuracy: %.8f' % \
                 (running_loss / counter, running_acc / counter)
-            print 'AttenAcc Point: %.8f, Common: %.8f, Both: %.8f' \
+
+            if not pure:
+                print 'AttenAcc Point: %.8f, Common: %.8f, Both: %.8f' \
                             % (point_acc/counter, common_acc/counter, both_acc/counter)
-            print '  Merge Acc Rate %.8f' % (merge_acc/counter)
+                print '  Merge Acc Rate %.8f' % (merge_acc/counter)
+
             break
 
 
@@ -305,6 +314,10 @@ def main(FLAGS):
     with open(vocab_path, 'r') as f:
         vocab = pickle.load(f)
 
+    if FLAGS.pure:
+        TensorName.remove('attention')
+
+
     # eval
     with tf.Session() as sess:
 
@@ -322,21 +335,21 @@ def main(FLAGS):
             print '%d -- %s' % (idx, fname)
             saver.restore(sess, fname)
 
-            M = dig_tensors(sess.graph)
+            M = dig_tensors(sess.graph, targ=TensorName)
 
             # test dataset
             test_iter = eval_iter(test_files, max_nsteps,
                                   max_query_length, batch_size, vocab)
             test_step = test_iter.next()
             print 'Running on Test data'
-            test_on(test_iter, M, sess)
+            test_on(test_iter, M, sess, pure=FLAGS.pure)
 
             # validate dataset
             validate_iter = eval_iter(
                 validate_files, max_nsteps, max_query_length, batch_size, vocab)
             validate_step = validate_iter.next()
             print 'Running on Validate data'
-            test_on(validate_iter, M, sess)
+            test_on(validate_iter, M, sess, pure=FLAGS.pure)
 
 
 if __name__ == '__main__':
@@ -347,9 +360,10 @@ if __name__ == '__main__':
 
     flags.DEFINE_string("data_dir", "data",
                         "The name of data directory [data]")
-    flags.DEFINE_string(
-        "dataset", "cnn", "The name of dataset [cnn, dailymail]")
+    flags.DEFINE_string("dataset", "cnn", "The name of dataset")
     flags.DEFINE_string("load_path", None, "The path to old model. [None]")
+
+    flags.DEFINE_boolean("pure", True, "")
     FLAGS = flags.FLAGS
 
     if os.path.isdir(FLAGS.load_path):

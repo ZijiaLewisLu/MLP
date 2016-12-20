@@ -53,7 +53,7 @@ qL = 15
 stop_id = 2
 val_rate = 0.05
 glove_dir = './data/glove_wiki'
-idf_path  = './data/squad/train_idf_data.pk'
+idf_path  = './data/squad/train_tfidf.pk'
 
 
 
