@@ -33,7 +33,7 @@ def format_data(js):
     return formated
 
 
-def filter_data(formated, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
+def filter_data(formated, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)", pos_idx=2):
     def _locate(c, a, s, period_loc):
         if c[s] != a[0]:
             return None, 1
@@ -50,7 +50,7 @@ def filter_data(formated, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)"):
     def _one_piece(_data):
         c, q, a_s = _data
         # get delimiter location
-        period_loc = [_.start(2) + 1 for _ in re.finditer(exps, c)]
+        period_loc = [_.start(pos_idx) + 1 for _ in re.finditer(exps, c)]
         period_loc.insert(0, 0)
         if period_loc[-1] != len(c):
             period_loc.append(len(c))
@@ -204,6 +204,23 @@ def create_vocab_glove(data_triple, glove_words, cap=None):
     vocab = {k: i for i, k in enumerate(vocab_list)}
     return vocab
 
+def idf(documents):
+    s=set()
+    for d in documents:
+        s = s.union(set(d))
+    s = list(s)    
+    
+    V = len(s)
+    D = len(documents)
+    occur = np.zeros([V,D]).astype(np.bool)
+    w2id = dict(zip(s, range(V)))
+
+    for i, d in enumerate(documents):
+        for j, tk in enumerate(d):
+            occur[ w2id[tk], i ] = True
+        
+    _idf = list(np.log(D/occur.sum(1).astype(np.float32)))
+    return dict(zip(s, _idf))
 
 def _t2id(tlist, v, unk_id=0):
     ids = [v.get(t, unk_id) for t in tlist]
@@ -368,6 +385,37 @@ def _load(_fname):
             line = f.readline()
     return D
 
+def tfidf_save(fname, data):
+    f = open(fname, 'w')
+    for sp in data:
+        sen, que = sp
+#         sen = map(str, _sen)
+#         que = map(str, _que)
+        f.write('%d\n'%len(sen))
+        f.write('\n'.join([ ' '.join( map(str, _) ) for _ in sen ]))
+        f.write('\n\n')
+        f.write(' '.join( map(str,que)))
+        f.write('\n\n')
+    f.close()
+
+def tfidf_load(fname):
+    f = open(fname, 'r')
+    data = []
+    line = f.readline()
+    while line:
+        n = int(line.strip('\n'))
+        sen = []
+        for i in range(n):
+            new = f.readline().strip('\n').split(' ')
+            new = map(float, new)
+            sen.append(new)
+        f.readline()
+        que = f.readline().strip('\n').split(' ')
+        que = map(float, que)
+        data.append([sen, que])
+        f.readline()
+        line = f.readline()
+    return data
 
 def prepare_data(path, idf_path, data_size=None, size=3185, val_rate=0.05):
     train_data = _load(path)
