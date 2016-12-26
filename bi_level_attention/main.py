@@ -20,11 +20,12 @@ flags.DEFINE_integer("data_size", None, "Number of files to train on")
 flags.DEFINE_float("eval_every", 100.0, "Eval every step")
 flags.DEFINE_float("save_every", 500.0, "Eval every step")
 flags.DEFINE_string("log_dir", "log", "Directory name to save the log [log]")
-flags.DEFINE_string("data_dir", "data/squad", "Data")
+flags.DEFINE_string("dataset", "squad", "Data")
 flags.DEFINE_string("load_path", None, "The path to old model.")
+flags.DEFINE_string("weight", 'one', 'one, idf, tfidf')
 
 flags.DEFINE_integer("epoch", 60, "Epoch to train")
-flags.DEFINE_integer("vocab_size", 60000, "The size of vocabulary")
+flags.DEFINE_integer("vocab_size", 0, "The size of vocabulary")
 flags.DEFINE_integer("batch_size", 32, "The size of batch images")
 flags.DEFINE_integer("embed_size", 300, "Embed size")
 flags.DEFINE_integer("hidden_size", 256, "Hidden dimension")
@@ -53,8 +54,42 @@ qL = 15
 stop_id = 2
 val_rate = 0.05
 glove_dir = './data/glove_wiki'
-idf_path  = './data/squad/train_tfidf.pk'
 
+
+vocab_size = FLAGS.vocab_size
+w = FLAGS.weight
+
+if FLAGS.dataset == 'squad':
+    if not vocab_size: 
+        vocab_size = 60000
+        
+    if not FLAGS.glove:
+        train_data = './data/squad/ids_not_glove%d_train.txt' % vocab_size
+    else:
+        train_data = './data/squad/ids_glove%d_train.txt' % vocab_size
+
+    if w == 'one':
+        wt_path = './data/squad/train_ones.txt'
+    elif w == 'idf':
+        wt_path = './data/squad/train_idf.txt'
+    elif w == 'tfidf':
+        wt_path = './data/squad/train_tfidf.txt'
+
+elif FLAGS.dataset == 'nqa':
+    if not vocab_size: 
+        vocab_size = 75000
+        
+    if not FLAGS.glove:
+        data_path = './data/newsqa/ids_not_glove%d_train.txt' % vocab_size
+    else:
+        data_path = './data/newsqa/ids_glove%d_train.txt' % vocab_size
+
+    if w == 'one':
+        wt_path = './data/newsqa/train_ones.txt'
+    elif w == 'idf':
+        wt_path = './data/newsqa/train_idf.txt'
+    elif w == 'tfidf':
+        wt_path = './data/newsqa/train_tfidf.txt'
 
 
 def initialize(sess, saver, load_path=None):
@@ -91,13 +126,6 @@ def create_logger(track_dir, to_console=True):
     logger.setLevel(logging.DEBUG)
 
     return logger
-
-
-def save_track(data, base_name):
-    for i, d in enumerate(data):
-        fname = "%s_%d" % (base_name, i)
-        np.save(fname, d)
-
 
 def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
     
@@ -175,17 +203,12 @@ def main(_):
         print '  Variable inited'
 
         # load data =========================
-        if not FLAGS.glove:
-            ids_path = os.path.join(
-                FLAGS.data_dir, 'ids_not_glove%d_train.txt' % FLAGS.vocab_size)
-        else:
-            ids_path = os.path.join(
-                FLAGS.data_dir, 'ids_glove%d_train.txt' % FLAGS.vocab_size)
+        data = prepare_data(data_path, wt_path, 
+                            data_size=FLAGS.data_size, val_rate=val_rate)
+        train_data, train_idf, validate_data, validate_idf, vsize = data
 
-        train_data, train_idf, validate_data, validate_idf, vsize = prepare_data(
-                            ids_path, idf_path, data_size=FLAGS.data_size, val_rate=val_rate)
-        print '  Data Loaded from %s' % ids_path
-        print '  IDF  Loaded from %s' % idf_path
+        print '  Data Loaded from %s' % data_path
+        print '  Weight Loaded from %s' % wt_path
 
         # log ================================
         log_dir = "%s/%s" % (FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
@@ -202,14 +225,12 @@ def main(_):
         # track_dir = os.path.join(log_dir, 'track')
         # os.makedirs(track_dir)
 
-        # counter = 1
         vcounter = 1
         writer = tf.train.SummaryWriter(log_dir, sess.graph)
         start_time = time.time()
         running_acc = 0.0
         running_loss = 0.0
-        # max_acc = [0, None, None, None]
-        # min_loss = [np.inf, None, None, None]
+
         print '  Start Training'
         # tracker.info('  So you know I am working:)')
         sys.stdout.flush()
@@ -268,12 +289,6 @@ def main(_):
                 running_loss += loss
                 writer.add_summary(sum_str, gstep)
 
-                # gradient norm check =============================
-                # for i, (g, v) in enumerate(origin_gv):
-                #     nm = norm(g)
-                #     if nm > FLAGS.clip_norm:
-                #         tracker.warning('%s, gradient norm: %f, global_step:%d' % (
-                #             model.origin_gv[i][1].name, nm, gstep))
 
                 if (gstep + 1) % 20 == 0:
                     print "%d Epoch: [%2d] [%4d/%4d] time: %4.4f, loss: %.8f, accuracy: %.8f" \

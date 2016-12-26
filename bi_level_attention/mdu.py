@@ -8,6 +8,9 @@ import re
 from glob import glob
 from nltk import TreebankWordTokenizer
 from string import punctuation
+
+from collections import Counter
+
 _tokenrize = TreebankWordTokenizer().tokenize
 
 
@@ -204,23 +207,59 @@ def create_vocab_glove(data_triple, glove_words, cap=None):
     vocab = {k: i for i, k in enumerate(vocab_list)}
     return vocab
 
-def idf(documents):
-    s=set()
-    for d in documents:
-        s = s.union(set(d))
-    s = list(s)    
-    
-    V = len(s)
-    D = len(documents)
-    occur = np.zeros([V,D]).astype(np.bool)
-    w2id = dict(zip(s, range(V)))
+# Tf Idf =========================================================
 
-    for i, d in enumerate(documents):
-        for j, tk in enumerate(d):
-            occur[ w2id[tk], i ] = True
+def idf(documents):
+    v={}
+    for d in documents:
+        d = set(d)
+        for tk in d:
+            if tk in v:
+                v[tk] += 1
+            else:
+                v[tk] = 1
         
-    _idf = list(np.log(D/occur.sum(1).astype(np.float32)))
-    return dict(zip(s, _idf))
+    D = len(documents)
+    _idf = { k:np.log(D/float(ct)) for k, ct in v.items() }
+    return _idf
+
+def token2cst(tk, constant=1):
+    ones = []
+    for sens, q, sid, a in tk:
+        scst = [ [constant]*len(_) for _ in sens ]
+        qcst = [constant]*len(q)
+        ones.append( [scst, qcst] )
+    return ones
+
+def token2idf(tk, _idf):
+    idf = []
+    cvt = lambda x: _idf.get(x,0.0)
+    for sens, q, sid, a in tk:
+        sens_idf = []
+        for s in sens:
+            sens_idf.append( map( cvt , s) )
+        q_idf = map( cvt, q )
+        idf.append( [sens_idf, q_idf] )
+    return idf
+
+def token2tfidf(tk, _idf):
+    tfidf = []
+    for sens, q, sid, a in tk:
+        all_token = list(q)*3
+        for s in sens:
+            all_token += s
+        ct = Counter(all_token)
+        
+        cvt = lambda x : ct[x] * _idf.get(x, 0)
+        
+        sens_idf = []
+        for s in sens:
+            sens_idf.append( map( cvt , s) )
+        q_idf = map( cvt, q )
+        tfidf.append( [sens_idf, q_idf] )
+    return tfidf
+
+# word ids ==============================================
 
 def _t2id(tlist, v, unk_id=0):
     ids = [v.get(t, unk_id) for t in tlist]
@@ -339,7 +378,7 @@ def batchIter(batch_size, data, idf, sN, sL, qL, stop_id=2, add_stop=True):
 
         yield idx, P, P_idf, p_len, Q, Q_idf, q_len, A
 
-def _save(_fname, _data):
+def id_save(_fname, _data):
     with open(_fname, 'w') as f:
         for seq, qur, sid, answer_id in _data:
             N = len(seq)
@@ -355,7 +394,7 @@ def _save(_fname, _data):
             f.write('\n')
 
 
-def _load(_fname):
+def id_load(_fname):
     D = []
     with open(_fname, 'r') as f:
         line = f.readline()
@@ -385,7 +424,7 @@ def _load(_fname):
             line = f.readline()
     return D
 
-def tfidf_save(fname, data):
+def weight_save(fname, data):
     f = open(fname, 'w')
     for sp in data:
         sen, que = sp
@@ -398,7 +437,7 @@ def tfidf_save(fname, data):
         f.write('\n\n')
     f.close()
 
-def tfidf_load(fname):
+def weight_load(fname):
     f = open(fname, 'r')
     data = []
     line = f.readline()
@@ -417,22 +456,21 @@ def tfidf_load(fname):
         line = f.readline()
     return data
 
-def prepare_data(path, idf_path, data_size=None, size=3185, val_rate=0.05):
-    train_data = _load(path)
-    with open(idf_path, 'r') as f:
-        train_idf = pk.load(f)
+def prepare_data(id_path, wt_path, data_size=None, size=3185, val_rate=0.05):
+    train_data = id_load(id_path)
+    train_wt   = weight_load(wt_path)
 
     validate_data = train_data[-size:]
-    validate_idf  = train_idf[-size:]
+    validate_wt  = train_wt[-size:]
     train_data = train_data[:-size]
-    train_idf = train_idf[:-size]
+    train_wt = train_wt[:-size]
 
     if data_size:
         train_data = train_data[:data_size]
-        train_idf  = train_idf[:data_size]
+        train_wt  = train_wt[:data_size]
     vsize = max(20, len(train_data) * val_rate)
     vsize = int(min(vsize, len(validate_data)))
-    return train_data, train_idf, validate_data, validate_idf, vsize
+    return train_data, train_wt, validate_data, validate_wt, vsize
 
 
 # def load_data(data_dir='/home/zijia/nlp/proj/mult-attention/data/squad/', batch_size=64, vocab_size=50000,
