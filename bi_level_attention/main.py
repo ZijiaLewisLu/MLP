@@ -11,7 +11,7 @@ from mdu import restruct_glove_embedding
 from mdu import prepare_data
 from tensorflow.contrib.layers import l2_regularizer
 from base import orthogonal_initializer
-from eval_tool import norm
+# from eval_tool import norm
 
 flags = tf.app.flags
 
@@ -54,43 +54,6 @@ qL = 15
 stop_id = 2
 val_rate = 0.05
 glove_dir = './data/glove_wiki'
-
-
-vocab_size = FLAGS.vocab_size
-w = FLAGS.weight
-
-if FLAGS.dataset == 'squad':
-    if not vocab_size: 
-        vocab_size = 60000
-        
-    if not FLAGS.glove:
-        train_data = './data/squad/ids_not_glove%d_train.txt' % vocab_size
-    else:
-        train_data = './data/squad/ids_glove%d_train.txt' % vocab_size
-
-    if w == 'one':
-        wt_path = './data/squad/train_ones.txt'
-    elif w == 'idf':
-        wt_path = './data/squad/train_idf.txt'
-    elif w == 'tfidf':
-        wt_path = './data/squad/train_tfidf.txt'
-
-elif FLAGS.dataset == 'nqa':
-    if not vocab_size: 
-        vocab_size = 75000
-        
-    if not FLAGS.glove:
-        data_path = './data/newsqa/ids_not_glove%d_train.txt' % vocab_size
-    else:
-        data_path = './data/newsqa/ids_glove%d_train.txt' % vocab_size
-
-    if w == 'one':
-        wt_path = './data/newsqa/train_ones.txt'
-    elif w == 'idf':
-        wt_path = './data/newsqa/train_idf.txt'
-    elif w == 'tfidf':
-        wt_path = './data/newsqa/train_tfidf.txt'
-
 
 def initialize(sess, saver, load_path=None):
     if not load_path:
@@ -172,7 +135,45 @@ def create_model(FLAGS, sN=sN, sL=sL, qL=qL):
 
 
 def main(_):
-    pp.pprint(flags.FLAGS.__flags)
+
+    w = FLAGS.weight
+    if FLAGS.dataset == 'squad':
+        if not FLAGS.vocab_size: 
+            FLAGS.__flags['vocab_size'] = 60000
+            
+        if not FLAGS.glove:
+            data_path = './data/squad/ids_not_glove%d_train.txt' % FLAGS.vocab_size
+        else:
+            data_path = './data/squad/ids_glove%d_train.txt' % FLAGS.vocab_size
+
+        if w == 'one':
+            wt_path = './data/squad/train_ones.txt'
+        elif w == 'idf':
+            wt_path = './data/squad/train_idf.txt'
+        elif w == 'tfidf':
+            wt_path = './data/squad/train_tfidf.txt'
+
+    elif FLAGS.dataset == 'nqa' or FLAGS.dataset == 'newsqa':
+        if not FLAGS.vocab_size: 
+            FLAGS.__flags['vocab_size'] = 75000
+            
+        if not FLAGS.glove:
+            data_path = './data/newsqa/ids_not_glove%d_train.txt' % FLAGS.vocab_size
+        else:
+            data_path = './data/newsqa/ids_glove%d_train.txt' % FLAGS.vocab_size
+
+        if w == 'one':
+            wt_path = './data/newsqa/train_ones.txt'
+        elif w == 'idf':
+            wt_path = './data/newsqa/train_idf.txt'
+        elif w == 'tfidf':
+            wt_path = './data/newsqa/train_tfidf.txt'
+
+    else:
+        raise ValueError(FLAGS.dataset)
+
+    assert FLAGS.vocab_size!=0, FLAGS.__flags
+    pp.pprint(FLAGS.__flags)
 
     go = raw_input('Do you want to go with these setting? ')
     if go not in ['Yes', 'y', 'Y', 'yes']:

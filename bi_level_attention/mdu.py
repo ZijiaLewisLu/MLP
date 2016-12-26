@@ -428,8 +428,6 @@ def weight_save(fname, data):
     f = open(fname, 'w')
     for sp in data:
         sen, que = sp
-#         sen = map(str, _sen)
-#         que = map(str, _que)
         f.write('%d\n'%len(sen))
         f.write('\n'.join([ ' '.join( map(str, _) ) for _ in sen ]))
         f.write('\n\n')
