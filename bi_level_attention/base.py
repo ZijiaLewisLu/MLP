@@ -65,9 +65,9 @@ class BaseModel(object):
         self.q_len = tf.placeholder(tf.int32, [batch_size], name='q_len')
         self.answer = tf.placeholder(tf.int64, [batch_size, sN], name='answer')
 
-        self.p_idf = tf.placeholder(
+        self.p_wt = tf.placeholder(
             tf.float32, [batch_size, sN, sL], name='p_idf')
-        self.q_idf = tf.placeholder(tf.float32, [batch_size, qL], name='q_idf')
+        self.q_wt = tf.placeholder(tf.float32, [batch_size, qL], name='q_idf')
 
         self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
 

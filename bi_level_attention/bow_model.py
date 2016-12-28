@@ -35,8 +35,6 @@ class BoW_Attention(BaseModel):
 
         # feat = self.stat_attention(hidden_size)
 
-        # assert False
-
         global_step = tf.Variable(0, name='global_step', trainable=False)
         learning_rate = tf.train.exponential_decay(
             learning_rate, global_step, 1000, 0.95)
@@ -67,18 +65,17 @@ class BoW_Attention(BaseModel):
             q_rep = tf.concat(1, [ffinal, bfinal])
 
         with tf.name_scope('BoW'):
-            p_lens = tf.unpack(self.p_len, axis=1) # [N] * sN
-            masks = []
-            for _ in p_lens:
-                m = tf.sequence_mask(_, sL, dtype=tf.float32)
-                masks.append(m)
-            masks = tf.pack(masks, 1)  # N, sN, sL
-            masks = tf.expand_dims(masks, -1, name='masks')
-            embed_p = embed_p * masks
-            bow_p = tf.reduce_sum(embed_p, 2, name='bow')  # N, sN, E
-            # print '  Using tf_idf weight'
-            # idf = tf.expand_dims( self.p_idf, -1 )
-            # bow_p = tf.reduce_sum( embed_p*idf, 2, name='bow' )
+            # p_lens = tf.unpack(self.p_len, axis=1) # [N] * sN
+            # masks = []
+            # for _ in p_lens:
+            #     m = tf.sequence_mask(_, sL, dtype=tf.float32)
+            #     masks.append(m)
+            # masks = tf.pack(masks, 1)  # N, sN, sL
+            # masks = tf.expand_dims(masks, -1, name='masks')
+            # embed_p = embed_p * masks
+            # bow_p = tf.reduce_sum(embed_p, 2, name='bow')  # N, sN, E
+            wt = tf.expand_dims( self.p_wt, -1 )
+            bow_p = tf.reduce_sum( embed_p*wt, 2, name='bow' )
 
         sN_mask = tf.to_float(self.p_len > 0, name='sN_mask')  # N, sN
         sN_count = tf.reduce_sum(sN_mask, 1)
