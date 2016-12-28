@@ -429,9 +429,10 @@ def weight_save(fname, data):
     for sp in data:
         sen, que = sp
         f.write('%d\n'%len(sen))
-        f.write('\n'.join([ ' '.join( map(str, _) ) for _ in sen ]))
+        _sen = [ ' '.join( map(str, _) ) for _ in sen ]
+        f.write('\n'.join(_sen))
         f.write('\n\n')
-        f.write(' '.join( map(str,que)))
+        f.write(' '.join(map(str,que)))
         f.write('\n\n')
     f.close()
 
@@ -452,6 +453,7 @@ def weight_load(fname):
         data.append([sen, que])
         f.readline()
         line = f.readline()
+    f.close()
     return data
 
 def prepare_data(id_path, wt_path, data_size=None, size=3185, val_rate=0.05):

@@ -12,10 +12,11 @@ from mdu import prepare_data
 from tensorflow.contrib.layers import l2_regularizer
 from base import orthogonal_initializer
 # from eval_tool import norm
+from utils import define_gpu
 
 flags = tf.app.flags
 
-flags.DEFINE_integer("gpu", 3, "the number of gpus to use")
+flags.DEFINE_integer("gpu", 1, "the number of gpus to use")
 flags.DEFINE_integer("data_size", None, "Number of files to train on")
 flags.DEFINE_float("eval_every", 100.0, "Eval every step")
 flags.DEFINE_float("save_every", 500.0, "Eval every step")
@@ -180,9 +181,9 @@ def main(_):
         exit(2)
 
     if FLAGS.gpu is not None:
-        # gpu_list  = define_gpu(FLAGS.gpu)
-        # print('  Using GPU:%s' % gpu_list)
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu)
+        gpu_list  = define_gpu(FLAGS.gpu)
+        print('  Using GPU:%s' % gpu_list)
+        # os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu)
 
     with tf.Session() as sess:
         model = create_model(FLAGS)
@@ -206,7 +207,7 @@ def main(_):
         # load data =========================
         data = prepare_data(data_path, wt_path, 
                             data_size=FLAGS.data_size, val_rate=val_rate)
-        train_data, train_idf, validate_data, validate_idf, vsize = data
+        train_data, train_wt, validate_data, validate_wt, vsize = data
 
         print '  Data Loaded from %s' % data_path
         print '  Weight Loaded from %s' % wt_path
@@ -243,13 +244,13 @@ def main(_):
             order = np.random.choice(order, size=T_size)
             np.random.shuffle(order)
             t_data = [ train_data[i] for i in order ]
-            t_idf  = [ train_idf[i]  for i in order ]
+            t_wt  = [ train_wt[i]  for i in order ]
             
-            titer = batchIter(FLAGS.batch_size, t_data, t_idf,
+            titer = batchIter(FLAGS.batch_size, t_data, t_wt,
                               sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
             tstep = titer.next()
 
-            for batch_idx, P, p_idf, p_len, Q, q_idf, q_len, A in titer:
+            for batch_idx, P, p_wt, p_len, Q, q_wt, q_len, A in titer:
 
                 rslt = sess.run(
                     [
@@ -271,10 +272,10 @@ def main(_):
                     feed_dict={
                         model.passage: P,
                         model.p_len: p_len,
-                        model.p_idf: p_idf,
+                        model.p_wt: p_wt,
                         model.query: Q,
                         model.q_len: q_len,
-                        model.q_idf: q_idf,
+                        model.q_wt: q_wt,
                         model.answer: A,
                         model.dropout: FLAGS.dropout,
                     })
@@ -310,21 +311,21 @@ def main(_):
                     _loss = 0.0
                     idxs = np.random.choice(len(validate_data), size=vsize)
                     D = [validate_data[idx] for idx in idxs]
-                    I = [validate_idf[idx]  for idx in idxs]
-                    viter = batchIter(FLAGS.batch_size, D, I,
+                    W = [validate_wt[idx]  for idx in idxs]
+                    viter = batchIter(FLAGS.batch_size, D, W,
                                 sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
                     vstep = float(viter.next())
 
-                    for batch_idx, P, p_idf, p_len, Q, q_idf, q_len, A in viter:
+                    for batch_idx, P, p_wt, p_len, Q, q_wt, q_len, A in viter:
                         loss, accuracy, sum_str = sess.run(
                             [model.loss, model.accuracy, model.validate_summary],
                             feed_dict={
                                 model.passage: P,
                                 model.p_len: p_len,
-                                model.p_idf: p_idf,
+                                model.p_wt: p_wt,
                                 model.query: Q,
                                 model.q_len: q_len,
-                                model.q_idf: q_idf,
+                                model.q_wt: q_wt,
                                 model.answer: A,
                                 model.dropout: 1.0,
                             })

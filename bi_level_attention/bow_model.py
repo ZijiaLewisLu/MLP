@@ -84,25 +84,28 @@ class BoW_Attention(BaseModel):
         sN_count = tf.to_int64(sN_count, name='sN_count')
         # self.sn_c_print = tf.Print(sN_count, [sN_count, sN_mask], message='sn count, sn mask', first_n=50)
 
-        sentence = bow_p  # N, sN, E
-        with tf.variable_scope("passage_represent"):
-            p_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
-                rnn_cell.LSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
-                rnn_cell.LSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
-                sentence,
-                sequence_length=sN_count,
-                dtype=tf.float32,
-                # initial_state_fw=final_state_fw,
-                # initial_state_bw=final_state_bw,
-            )
-            p_rep = tf.concat(2, p_rep)
+        # sentence = bow_p  # N, sN, E
+        # with tf.variable_scope("passage_represent"):
+        #     p_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
+        #         rnn_cell.LSTMCell(
+        #             hidden_size, forget_bias=0.0, state_is_tuple=True),
+        #         rnn_cell.LSTMCell(
+        #             hidden_size, forget_bias=0.0, state_is_tuple=True),
+        #         sentence,
+        #         sequence_length=sN_count,
+        #         dtype=tf.float32,
+        #         # initial_state_fw=final_state_fw,
+        #         # initial_state_bw=final_state_bw,
+        #     )
+        #     p_rep = tf.concat(2, p_rep)
 
-        with tf.name_scope('REP_dropout'):
-            q_rep = tf.nn.dropout(q_rep, self.dropout)
-            p_rep = tf.nn.dropout(p_rep, self.dropout)
+        # with tf.name_scope('REP_dropout'):
+        #     q_rep = tf.nn.dropout(q_rep, self.dropout)
+        #     p_rep = tf.nn.dropout(p_rep, self.dropout)
 
+        p_rep = bow_p
+        # print p_rep.get_shape()
+        # assert False
         p_rep = tf.unpack(p_rep, axis=1)
         atten = self.apply_attention(
             attention_type, hidden_size, sN, p_rep, q_rep, layer=attention_layer)
