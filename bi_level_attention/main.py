@@ -236,12 +236,12 @@ def main(_):
         print '  Start Training'
         # tracker.info('  So you know I am working:)')
         sys.stdout.flush()
-        T_size = len(train_data)/4
+        # T_size = len(train_data)/4
 
         for epoch_idx in range(FLAGS.epoch):
 
             order = range(len(train_data))
-            order = np.random.choice(order, size=T_size)
+            # order = np.random.choice(order, size=T_size)
             np.random.shuffle(order)
             t_data = [ train_data[i] for i in order ]
             t_wt  = [ train_wt[i]  for i in order ]
@@ -298,7 +298,7 @@ def main(_):
                     sys.stdout.flush()
                     running_loss = 0.0
                     running_acc = 0.0
-                    sess.run(model.learning_rate)
+                    # sess.run(model.learning_rate)
 
                 if (gstep + 1) % FLAGS.save_every == 0:
                     fname = os.path.join(save_dir, 'model')

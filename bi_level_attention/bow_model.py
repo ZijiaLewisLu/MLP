@@ -65,15 +65,6 @@ class BoW_Attention(BaseModel):
             q_rep = tf.concat(1, [ffinal, bfinal])
 
         with tf.name_scope('BoW'):
-            # p_lens = tf.unpack(self.p_len, axis=1) # [N] * sN
-            # masks = []
-            # for _ in p_lens:
-            #     m = tf.sequence_mask(_, sL, dtype=tf.float32)
-            #     masks.append(m)
-            # masks = tf.pack(masks, 1)  # N, sN, sL
-            # masks = tf.expand_dims(masks, -1, name='masks')
-            # embed_p = embed_p * masks
-            # bow_p = tf.reduce_sum(embed_p, 2, name='bow')  # N, sN, E
             wt = tf.expand_dims( self.p_wt, -1 )
             bow_p = tf.reduce_sum( embed_p*wt, 2, name='bow' )
 
@@ -84,28 +75,28 @@ class BoW_Attention(BaseModel):
         sN_count = tf.to_int64(sN_count, name='sN_count')
         # self.sn_c_print = tf.Print(sN_count, [sN_count, sN_mask], message='sn count, sn mask', first_n=50)
 
-        # sentence = bow_p  # N, sN, E
-        # with tf.variable_scope("passage_represent"):
-        #     p_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
-        #         rnn_cell.LSTMCell(
-        #             hidden_size, forget_bias=0.0, state_is_tuple=True),
-        #         rnn_cell.LSTMCell(
-        #             hidden_size, forget_bias=0.0, state_is_tuple=True),
-        #         sentence,
-        #         sequence_length=sN_count,
-        #         dtype=tf.float32,
-        #         # initial_state_fw=final_state_fw,
-        #         # initial_state_bw=final_state_bw,
-        #     )
-        #     p_rep = tf.concat(2, p_rep)
+        sentence = bow_p  # N, sN, E
+        with tf.variable_scope("passage_represent"):
+            p_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
+                rnn_cell.LSTMCell(
+                    hidden_size, forget_bias=0.0, state_is_tuple=True),
+                rnn_cell.LSTMCell(
+                    hidden_size, forget_bias=0.0, state_is_tuple=True),
+                sentence,
+                sequence_length=sN_count,
+                dtype=tf.float32,
+                # initial_state_fw=final_state_fw,
+                # initial_state_bw=final_state_bw,
+            )
+            p_rep = tf.concat(2, p_rep)
 
-        # with tf.name_scope('REP_dropout'):
-        #     q_rep = tf.nn.dropout(q_rep, self.dropout)
-        #     p_rep = tf.nn.dropout(p_rep, self.dropout)
+        with tf.name_scope('REP_dropout'):
+            q_rep = tf.nn.dropout(q_rep, self.dropout)
+            p_rep = tf.nn.dropout(p_rep, self.dropout)
 
-        p_rep = bow_p
-        # print p_rep.get_shape()
-        # assert False
+        # p_rep = bow_p
+        # # print p_rep.get_shape()
+        # # assert False
         p_rep = tf.unpack(p_rep, axis=1)
         atten = self.apply_attention(
             attention_type, hidden_size, sN, p_rep, q_rep, layer=attention_layer)

@@ -46,34 +46,20 @@ class Attention(BaseModel):
             self.emb, self.query, name='embed_q')  # N,qL,E
         self.embed_sum = tf.histogram_summary("embed", self.emb)
 
-        query_token = embed_q
-        with tf.variable_scope("query_represent"):
-            q_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
-                rnn_cell.LSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
-                rnn_cell.LSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
-                query_token,
-                sequence_length=self.q_len,
-                dtype=tf.float32)
-
-            ffinal = tf.reduce_max(q_rep[0], [1])
-            bfinal = tf.reduce_max(q_rep[1], [1])
-            # q_rep = tf.concat(1, [ffinal, bfinal])
-            q_rep = ffinal + bfinal
-
         with tf.name_scope('BoW'):
-            p_lens = tf.unpack(self.p_len, axis=1) # [N] * sN
-            masks = []
-            for _ in p_lens:
-                m = tf.sequence_mask(_, sL, dtype=tf.float32)
-                masks.append(m)
-            masks = tf.pack(masks, 1)  # N, sN, sL
-            # self.mask_print = tf.Print(
-            #     masks, [masks], message='bow mask', first_n=50, name='printBowMask')
-            masks = tf.expand_dims(masks, -1, name='masks')
-            embed_p = embed_p * masks
-            bow_p = tf.reduce_sum(embed_p, 2, name='bow')  # N, sN, E
+            wt_p = tf.expand_dims( self.p_wt, -1 )
+            bow_p = tf.reduce_sum( embed_p*wt_p, 2, name='bow_p' ) # N, sN, E
+            epsilon = 1e-5
+            denominator = tf.to_float(tf.expand_dims( self.p_len, -1 )) + epsilon
+            bow_p = tf.div( bow_p, denominator ) # N, sN, 1
+
+            wt_q = tf.expand_dims( self.q_wt, -1 ) 
+            bow_q = tf.reduce_sum( embed_q*wt_q, 1, name='bow_q') # N, E
+            denominator = tf.to_float(tf.expand_dims( self.q_len, -1 )) + epsilon
+            bow_q = tf.div( bow_q, denominator ) # N, 1
+
+            p_rep = bow_p
+            q_rep = bow_q
 
         sN_mask = tf.to_float(self.p_len > 0, name='sN_mask')  # N, sN
         sN_count = tf.reduce_sum(sN_mask, 1)
@@ -82,29 +68,13 @@ class Attention(BaseModel):
         sN_count = tf.to_int64(sN_count, name='sN_count')
         # self.sn_c_print = tf.Print(sN_count, [sN_count, sN_mask], message='sn count, sn mask', first_n=50)
 
-        sentence = bow_p  # N, sN, E
-        with tf.variable_scope("passage_represent"):
-            p_rep, final_state = tf.nn.bidirectional_dynamic_rnn(
-                rnn_cell.LSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
-                rnn_cell.LSTMCell(
-                    hidden_size, forget_bias=0.0, state_is_tuple=True),
-                sentence,
-                sequence_length=sN_count,
-                dtype=tf.float32,
-                # initial_state_fw=final_state_fw,
-                # initial_state_bw=final_state_bw,
-            )
-            # p_rep = tf.concat(2, p_rep)
-            p_rep = p_rep[0] + p_rep[1]
-
-        with tf.name_scope('REP_dropout'):
-            q_rep = tf.nn.dropout(q_rep, self.dropout)
-            p_rep = tf.nn.dropout(p_rep, self.dropout)
+        # with tf.name_scope('REP_dropout'):
+        #     q_rep = tf.nn.dropout(q_rep, self.dropout)
+        #     p_rep = tf.nn.dropout(p_rep, self.dropout)
 
         p_rep = tf.unpack(p_rep, axis=1)
         atten = self.apply_attention(
-            attention_type, hidden_size/2, sN, p_rep, q_rep, layer=attention_layer)
+            attention_type, embed_size/2, sN, p_rep, q_rep, layer=attention_layer)
 
         atten = atten - tf.reduce_min(atten, [1], keep_dims=True)
         atten = tf.mul(atten, sN_mask, name='unnormalized_attention')
@@ -131,7 +101,7 @@ class Attention(BaseModel):
             self.gvs, global_step=global_step, name='train_op')
         self.check_op = tf.add_check_numerics_ops()
 
-        tsum, vsum = self.create_summary()
+        tsum, vsum = self.create_summary(add_gv_sum=False)
         self.train_summary = tf.merge_summary(tsum)
         self.validate_summary = tf.merge_summary(vsum)
 

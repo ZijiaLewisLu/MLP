@@ -223,7 +223,7 @@ class BaseModel(object):
             raise ValueError(_type)
         return optim
 
-    def create_summary(self):
+    def create_summary(self, add_gv_sum=True):
         self.align_his = tf.histogram_summary('alignment', self.alignment)
 
         accu_sum = tf.scalar_summary('T_accuracy', self.accuracy)
@@ -231,6 +231,8 @@ class BaseModel(object):
 
         pv_sum = tf.histogram_summary('Var_prediction', self.prediction)
         av_sum = tf.histogram_summary('Var_answer', self.answer_id)
+
+        train_summary = [accu_sum, loss_sum, self.embed_sum, self.lr_sum, self.align_his]
 
         gv_sum = []
         gv_hist_sum = []
@@ -250,9 +252,9 @@ class BaseModel(object):
             gv_sum += [v_sum, g_sum, zero_frac]
             gv_hist_sum += [v_his, g_his]
 
-        train_summary = [accu_sum, loss_sum, self.embed_sum,
-                         gv_sum, gv_hist_sum, self.lr_sum, self.align_his]
-
+        if add_gv_sum:
+            train_summary += [ gv_sum, gv_hist_sum ]
+  
         Vaccu_sum = tf.scalar_summary('V_accuracy', self.accuracy)
         Vloss_sum = tf.scalar_summary('V_loss', tf.reduce_mean(self.loss))
         validate_summary = [Vaccu_sum, Vloss_sum, pv_sum, av_sum]

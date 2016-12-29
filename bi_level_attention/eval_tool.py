@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from collections import namedtuple
 import json
 import pickle as pk
-from mdu import _load
+from mdu import id_load
 import sys
 
 batch_size = 128

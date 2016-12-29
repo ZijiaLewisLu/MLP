@@ -94,7 +94,10 @@ def token_sample(data, normalize_digit=True):
         s = c[period_loc[i]:period_loc[i+1]].strip('. ').lower()
         if normalize_digit:
             s = re.sub('\d', '0', s)
-        sentence.append(token(s))
+        tk = token(s)
+        if len(tk) > 0:
+            sentence.append(tk)
+
     q = q.strip(' ?').lower()
     if normalize_digit:
         q = re.sub('\d', '0', q)
@@ -328,7 +331,7 @@ def _transform(d, l, end, pad=1, add_end=True):
         return d, l_
 
 
-def batchIter(batch_size, data, idf, sN, sL, qL, stop_id=2, add_stop=True):
+def batchIter(batch_size, data, idf, sN=10, sL=50, qL=15, stop_id=2, add_stop=True):
     N = len(data)
     steps = np.ceil(N / float(batch_size))
     steps = int(steps)
@@ -502,4 +505,31 @@ def prepare_data(id_path, wt_path, data_size=None, size=3185, val_rate=0.05):
 
 if __name__ == '__main__':
     # process_data(cap=50000)
-    pass
+    with open('./data/squad/train-v1.1.json') as f:
+        squad = json.load(f)
+    with open('./data/squad/vocab_not_glove_60000.js') as f:
+        vocab = json.load(f)
+
+    formated = format_data(squad)
+    gp = filter_data(formated)
+    good = gp[0]
+    print len(good)
+
+    tokens = [ token_sample(_) for _ in good ]  
+    ids = tokens2id(tokens, vocab)
+
+    wt_dc = []
+    for sen, que, sid, ans in tokens:
+        d = list(que)*3
+        for s in sen:
+            d += s
+
+    idf_map = idf(wt_dc)
+    ones = token2cst(tokens)
+    idf  = token2idf(tokens, idf_map)
+    tfidf = token2tfidf(tokens, idf_map)
+
+    id_save('./data/squad/ids_not_glove60000_train.txt', ids)
+    weight_save('./data/squad/train_ones.txt', ones)
+    weight_save('./data/squad/train_idf.txt', idf)
+    weight_save('./data/squad/train_tfidf.txt', tfidf)
