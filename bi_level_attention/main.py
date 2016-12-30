@@ -195,6 +195,10 @@ def main(_):
         model = create_model(FLAGS)
         print '  Model Built'
 
+        saver = tf.train.Saver(max_to_keep=5)
+        initialize(sess, saver, FLAGS.load_path)
+        print '  Variable inited'
+
         if FLAGS.glove:
             fname = os.path.join(glove_dir, 'glove.6B.%dd.txt' % FLAGS.embed_size)
             vocab_path = os.path.join(
@@ -205,10 +209,6 @@ def main(_):
                 fname, vocab, dim=FLAGS.embed_size)
             sess.run(model.emb.assign(embedding))
             print '  Load Embedding Matrix from %s' % fname
-
-        saver = tf.train.Saver(max_to_keep=5)
-        initialize(sess, saver, FLAGS.load_path)
-        print '  Variable inited'
 
         # load data =========================
         data = prepare_data(data_path, wt_path, 
@@ -229,10 +229,6 @@ def main(_):
             json.dump(FLAGS.__flags, f, indent=4)
         print '  Writing log to %s' % log_dir
 
-        # tracker = create_logger(log_dir, to_console=True)
-        # track_dir = os.path.join(log_dir, 'track')
-        # os.makedirs(track_dir)
-
         vcounter = 1
         writer = tf.train.SummaryWriter(log_dir, sess.graph)
         start_time = time.time()
@@ -242,12 +238,9 @@ def main(_):
         print '  Start Training'
         # tracker.info('  So you know I am working:)')
         sys.stdout.flush()
-        # T_size = len(train_data)/4
-
         for epoch_idx in range(FLAGS.epoch):
 
             order = range(len(train_data))
-            # order = np.random.choice(order, size=T_size)
             np.random.shuffle(order)
             t_data = [ train_data[i] for i in order ]
             t_wt  = [ train_wt[i]  for i in order ]
