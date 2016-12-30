@@ -73,8 +73,11 @@ def norm(x):
 
 
 def softmax(x, axis=-1):
-    x -= x.max()
-    exp = np.exp(x)
+    #print x.min(1)
+    #tmp = x - x.min(axis=1, keepdims=True)
+    #print tmp
+    tmp = x
+    exp = np.exp(tmp)
     return exp / np.sum(exp, axis=axis, keepdims=True)
 
 

@@ -51,12 +51,12 @@ class Attention(BaseModel):
             bow_p = tf.reduce_sum( embed_p*wt_p, 2, name='bow_p' ) # N, sN, E
             epsilon = 1e-5
             denominator = tf.to_float(tf.expand_dims( self.p_len, -1 )) + epsilon
-            bow_p = tf.div( bow_p, denominator ) # N, sN, 1
+            bow_p = tf.div( bow_p, denominator, name= 'true_bow_p' ) # N, sN, 1
 
             wt_q = tf.expand_dims( self.q_wt, -1 ) 
             bow_q = tf.reduce_sum( embed_q*wt_q, 1, name='bow_q') # N, E
             denominator = tf.to_float(tf.expand_dims( self.q_len, -1 )) + epsilon
-            bow_q = tf.div( bow_q, denominator ) # N, 1
+            bow_q = tf.div( bow_q, denominator, name='true_bow_q' ) # N, 1
 
             p_rep = bow_p
             q_rep = bow_q

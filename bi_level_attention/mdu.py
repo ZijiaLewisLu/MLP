@@ -81,9 +81,32 @@ def filter_data(formated, exps=u"([^A-Z]{2,6})([.?!;]+)(\s+[A-Z]\w*|$)", pos_idx
         % (len(catego[0]), len(catego[1]), len(catego[2]), len(catego[3]), len(formated))
     return catego
 
+def clean_str(string):
+    """
+    Tokenization/string cleaning for all datasets except for SST.
+    Original taken from https://github.com/yoonkim/CNN_sentence/blob/master/process_data.py
+    """
+    string = re.sub(r"(?<=\d),(?=\d)", '', string)
+    string = re.sub(r"[^A-Za-z0-9(),!?\'\`]", " ", string)
+    string = re.sub(r"\'s", " \'s", string)
+    string = re.sub(r"\'ve", " \'ve", string)
+    string = re.sub(r"n\'t", " n\'t", string)
+    string = re.sub(r"\'re", " \'re", string)
+    string = re.sub(r"\'d", " \'d", string)
+    string = re.sub(r"\'ll", " \'ll", string)
+    string = re.sub(r",", " , ", string)
+    string = re.sub(r"!", " ! ", string)
+    string = re.sub(r"\(", " \( ", string)
+    string = re.sub(r"\)", " \) ", string)
+    string = re.sub(r"\?", " \? ", string)
+    string = re.sub(r"\'", " \' ", string)
+    string = re.sub(r"\s{2,}", " ", string)
+    return string.strip().lower()
+
 def token(words):
+    words = clean_str(words)
     ts = _tokenrize(words)
-    ts = [ x.strip(punctuation) for x in ts ]
+    # ts = [ x.strip(punctuation) for x in ts ]
     ts = [ x for x in ts if len(x)>0 ]
     return ts
 
@@ -130,9 +153,9 @@ def token_sample(data, normalize_digit=True):
 #     return formated
 
 
-def create_vocab(data_triple, cap=None):
+def create_vocab(tokens, cap=None):
     X = []
-    for sentence, q, asi, answers in data_triple:
+    for sentence, q, asi, answers in tokens:
         X.extend(q)
         for s in sentence:
             X.extend(s)

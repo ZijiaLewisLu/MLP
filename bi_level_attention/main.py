@@ -200,7 +200,7 @@ def main(_):
             sess.run(model.emb.assign(embedding))
             print '  Load Embedding Matrix from %s' % fname
 
-        saver = tf.train.Saver(max_to_keep=15)
+        saver = tf.train.Saver(max_to_keep=5)
         initialize(sess, saver, FLAGS.load_path)
         print '  Variable inited'
 
@@ -247,7 +247,7 @@ def main(_):
             t_wt  = [ train_wt[i]  for i in order ]
             
             titer = batchIter(FLAGS.batch_size, t_data, t_wt,
-                              sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
+                              sN, sL, qL, stop_id=stop_id, add_stop=False)
             tstep = titer.next()
 
             for batch_idx, P, p_wt, p_len, Q, q_wt, q_len, A in titer:
@@ -313,7 +313,7 @@ def main(_):
                     D = [validate_data[idx] for idx in idxs]
                     W = [validate_wt[idx]  for idx in idxs]
                     viter = batchIter(FLAGS.batch_size, D, W,
-                                sN, sL, qL, stop_id=stop_id, add_stop=(not FLAGS.glove))
+                                sN, sL, qL, stop_id=stop_id, add_stop=False)
                     vstep = float(viter.next())
 
                     for batch_idx, P, p_wt, p_len, Q, q_wt, q_len, A in viter:
