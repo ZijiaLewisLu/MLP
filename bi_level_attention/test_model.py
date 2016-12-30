@@ -68,9 +68,9 @@ class Attention(BaseModel):
         sN_count = tf.to_int64(sN_count, name='sN_count')
         # self.sn_c_print = tf.Print(sN_count, [sN_count, sN_mask], message='sn count, sn mask', first_n=50)
 
-        # with tf.name_scope('REP_dropout'):
-        #     q_rep = tf.nn.dropout(q_rep, self.dropout)
-        #     p_rep = tf.nn.dropout(p_rep, self.dropout)
+        with tf.name_scope('REP_dropout'):
+            q_rep = tf.nn.dropout(q_rep, self.dropout)
+            p_rep = tf.nn.dropout(p_rep, self.dropout)
 
         p_rep = tf.unpack(p_rep, axis=1)
         atten = self.apply_attention(
@@ -101,7 +101,7 @@ class Attention(BaseModel):
             self.gvs, global_step=global_step, name='train_op')
         self.check_op = tf.add_check_numerics_ops()
 
-        tsum, vsum = self.create_summary(add_gv_sum=False)
+        tsum, vsum = self.create_summary(add_gv_sum=True)
         self.train_summary = tf.merge_summary(tsum)
         self.validate_summary = tf.merge_summary(vsum)
 

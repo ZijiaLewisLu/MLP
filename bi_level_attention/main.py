@@ -182,6 +182,7 @@ def main(_):
 
     if FLAGS.gpu is not None:
         gpu_list  = define_gpu(FLAGS.gpu)
+        gpu_list = [3]
         print('  Using GPU:%s' % gpu_list)
         # os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu)
 

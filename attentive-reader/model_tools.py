@@ -1,7 +1,7 @@
 import tensorflow as tf
+from utils.attention import local_attention
 
-
-def apply_attention(self, _type, size, d_t, u, auxi_arg):
+def apply_attention(_type, size, d_t, u, local_D=25):
 
     if _type == 'concat':
         r = concat_attention(size, d_t, u)
@@ -9,19 +9,17 @@ def apply_attention(self, _type, size, d_t, u, auxi_arg):
         r = bilinear_attention(size, d_t, u)
     elif _type == 'local':
         # r = self.local_attention(d_t, u, attention='concat')
-        from attention import local_attention
 
         WT_dm = tf.get_variable('WT_dm', [ size, size])
         WT_um = tf.get_variable('WT_um', [ size, size])
         _u = tf.matmul( u, WT_um )
-        # _u = tf.matmul( u, W_ym )
         _dt = tf.reduce_max( d_t, 1, name='local_dt') # N, 2H
         _dt = tf.matmul( _dt, WT_dm )
         decoder_state = tf.concat( 1, [_u, _dt] )
 
-        content_func = lambda x, y : concat_attention(x, u, return_attention=auxi_arg)
+        content_func = lambda x, y : concat_attention(x, u, return_attention=True)
         r, atten_hist = local_attention( decoder_state , d_t, 
-                        window_size=self.D, content_function=content_func)
+                        window_size=local_D, content_function=content_func)
     else:
         raise ValueError(_type)
 
