@@ -8,13 +8,12 @@ class Attention(BaseModel):
     def __init__(self, batch_size, sN, sL, qL,
                  vocab_size, embed_size, hidden_size,
                  learning_rate=5e-3,
-                 # l2_rate=5e-3,
                  optim_type='Adam',
                  attention_type='bilinear',
                  attention_layer=3,
                  glove=False,
                  train_glove=False,
-                 max_norm=1.5):
+                 max_norm=6):
         """
         sN: sentence number 
         sL: sentence length

@@ -139,8 +139,11 @@ def main(_):
 
     w = FLAGS.weight
     if FLAGS.dataset == 'squad':
+
+        data_dir = './data/squad'
+
         if not FLAGS.vocab_size: 
-            FLAGS.__flags['vocab_size'] = 60000
+            FLAGS.__flags['vocab_size'] = 70000
             
         if not FLAGS.glove:
             data_path = './data/squad/ids_not_glove%d_train.txt' % FLAGS.vocab_size
@@ -155,6 +158,9 @@ def main(_):
             wt_path = './data/squad/train_tfidf.txt'
 
     elif FLAGS.dataset == 'nqa' or FLAGS.dataset == 'newsqa':
+
+        data_dir = './data/squad'
+
         if not FLAGS.vocab_size: 
             FLAGS.__flags['vocab_size'] = 75000
             
@@ -182,7 +188,6 @@ def main(_):
 
     if FLAGS.gpu is not None:
         gpu_list  = define_gpu(FLAGS.gpu)
-        gpu_list = [3]
         print('  Using GPU:%s' % gpu_list)
         # os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu)
 
@@ -193,7 +198,7 @@ def main(_):
         if FLAGS.glove:
             fname = os.path.join(glove_dir, 'glove.6B.%dd.txt' % FLAGS.embed_size)
             vocab_path = os.path.join(
-                FLAGS.data_dir, "vocab_glove_%d.js" % FLAGS.vocab_size)
+                data_dir, "vocab_glove_%d.js" % FLAGS.vocab_size)
             with open(vocab_path, 'r') as f:
                 vocab = json.load(f)
             embedding = restruct_glove_embedding(
