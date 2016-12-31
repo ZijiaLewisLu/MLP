@@ -33,9 +33,11 @@ FLAGS = flags.FLAGS
 
 def fetch_model(_type):
   if _type == 'attentive':
-    from attentive_model import AttentiveReader as Reader
+    from model.attentive_model import AttentiveReader as Reader
   elif _type == 'stanford':
-    from stanford_model import StanfordReader as Reader
+    from model.stanford_model import StanfordReader as Reader
+  elif _type == 'test':
+    from model.test_model import TestReader as Reader
   else:
     raise ValueError(_type)
 

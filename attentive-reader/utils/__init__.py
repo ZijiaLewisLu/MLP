@@ -2,6 +2,7 @@ from tools import pp, array_pad
 from GPU_availability import GPU_availability as GPU
 from data_utils import *
 import os
+from model_tools import *
 
 def define_gpu(num):
     gpu_list = GPU()[:num]
