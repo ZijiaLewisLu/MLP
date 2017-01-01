@@ -6,7 +6,8 @@ from tensorflow.python.ops import rnn_cell
 
 import sys
 sys.path.insert(0, '..')
-from utils import fetch_files, data_iter, apply_attention
+from utils import fetch_files, data_iter #apply_attention
+from utils.attention import local_attention
 
 def norm(x):
     if not isinstance(x, np.ndarray):
@@ -24,9 +25,9 @@ class BaseModel(object):
                  max_query_length=20,
                  use_optimizer='RMS',
                  activation='tanh',
-                 attention='concat',
+                 attention='bilinear',
                  bidirection=True,
-                 D=25,
+                 D=5,
                  max_norm=6,
                  ):
 
@@ -124,6 +125,103 @@ class BaseModel(object):
         self.validate_sum = tf.merge_summary(
             [embed_sum, v_loss_sum, v_acc_sum])
 
+    def apply_attention( self, _type, size, d_t, u, local_D=25):
+
+        if _type == 'concat':
+            r = self.concat_attention(size, d_t, u)
+        elif _type == 'bilinear':
+            r = self.bilinear_attention(size, d_t, u)
+        elif _type == 'local':
+            # r = self.local_attention(d_t, u, attention='concat')
+
+            WT_dm = tf.get_variable('WT_dm', [ size, size])
+            WT_um = tf.get_variable('WT_um', [ size, size])
+            _u = tf.matmul( u, WT_um )
+            _dt = tf.reduce_max( d_t, 1, name='local_dt') # N, 2H
+            _dt = tf.matmul( _dt, WT_dm )
+            decoder_state = tf.concat( 1, [_u, _dt] )
+
+            content_func = lambda x, y : self.concat_attention(x, u, return_attention=True)
+            r, atten_hist = local_attention( decoder_state , d_t, 
+                            window_size=local_D, content_function=content_func)
+        else:
+            raise ValueError(_type)
+
+        return r
+
+    def concat_attention( self, size, d_t, u, return_attention=False):
+        W_ym = tf.get_variable('W_ym', [ size, size])
+        W_um = tf.get_variable('W_um', [ size, size])
+        W_ms = tf.get_variable('W_ms', [ size ])
+        m_t = []
+        U = tf.matmul(u, W_um)  # N,H
+
+        d_t = tf.unpack(d_t, axis=1)
+        for d in d_t:
+            m_t.append(tf.matmul(d, W_ym) + U)  # N,H
+        m = tf.pack(m_t, 1)  # N,T,H
+        m = tf.tanh(m)
+        ms = tf.reduce_sum(m * W_ms, 2, keep_dims=True, name='ms')  # N,T,1
+        s = tf.nn.softmax(ms, 1)  # N,T,1
+        atten = tf.squeeze(s, [-1], name='attention')
+        d = tf.pack(d_t, axis=1)  # N,T,2E
+        if return_attention:
+            return atten
+        else:
+            r = tf.reduce_sum(s * d, 1, name='r')  # N, 2E
+            return r
+
+    def bilinear_attention( self, size, d_t, u, return_attention=False):
+        W = tf.get_variable('W_bilinear', [ size, size ])
+        atten = []
+
+        d_t = tf.unpack(d_t, axis=1)
+        for d in d_t:
+            a = tf.matmul(d, W, name='dW')  # N, 2H
+            a = tf.reduce_sum(a * u, 1, name='Wq')  # N
+            atten.append(a)
+        atten = tf.pack(atten, axis=1, )  # N, T
+        atten = tf.nn.softmax(atten, name='attention')
+        atten = tf.expand_dims(atten, 2)  # N, T, 1
+        if return_attention:
+            return atten
+        else:
+            d = tf.pack(d_t, axis=1)
+            r = tf.reduce_sum(atten * d, 1, name='r')
+            return r
+
+    def _extract_state(self, state, seq_end, need_unpack=True):
+        if need_unpack:
+            state = tf.unpack(state, axis=0)
+        begins = tf.pack(
+            [seq_end - 1, tf.zeros([self.batch_size], dtype=tf.int32)], axis=1)  # N, 2
+        begins = tf.unpack(begins)
+
+        size = state[0].get_shape()[-1].value
+
+        final_state = []
+        for h, b in zip(state, begins):
+            f = tf.slice(h, b, [1, size])
+            final_state.append(f)
+
+        final = tf.pack(final_state)
+        final = tf.squeeze(final, [1])
+
+        print '_extract', final.get_shape()
+
+        return final
+
+    def extract_rnn_state(self, bidirection, state, seq_end):
+        if bidirection:
+            f = self._extract_state(state[0], seq_end, need_unpack=True)
+            bhidden = tf.reverse(state[1], [True, False, True], name='reverse_bw')
+            b = self._extract_state( bhidden, seq_end )
+            final = tf.concat(1, [f, b])  # N, Hidden*2
+        else:
+            final = self._extract_state( state, need_unpack=False )
+
+        return final
+
     def rnn(self, hidden_size, input_tensor, seq_length, dtype=tf.float32, use_bidirection=True, cell_type='LSTM'):
 
         if cell_type == 'LSTM':
@@ -135,6 +233,8 @@ class BaseModel(object):
 
         if use_bidirection:            
             # (TODO) change
+            print 'rnn', hidden_size
+
             h_t, final_state, = tf.nn.bidirectional_dynamic_rnn(
                 cell(hidden_size),
                 cell(hidden_size),
@@ -146,7 +246,6 @@ class BaseModel(object):
                 cell(2 * hidden_size),
                 input_tensor,
                 sequence_length=seq_length, dtype=dtype)
-
         return h_t, final_state
 
     def get_optimizer(self):

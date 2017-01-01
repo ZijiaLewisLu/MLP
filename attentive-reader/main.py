@@ -10,14 +10,14 @@ flags.DEFINE_integer("epoch", 15, "Epoch to train [40]")
 flags.DEFINE_integer("vocab_size", 50003, "The size of vocabulary [10000]")
 flags.DEFINE_integer("batch_size", 128, "The size of batch images [32]")
 flags.DEFINE_integer("gpu", 1, "the number of gpus to use")
-flags.DEFINE_integer("data_size", None, "Number of files to train on")
+flags.DEFINE_integer("data_size", 150000, "Number of files to train on")
 flags.DEFINE_integer("hidden_size", 256, "Hidden dimension for rnn and fully connected layer")
-flags.DEFINE_integer("eval_every", 1000, "Eval every step")
-flags.DEFINE_integer("D", 25, 'local_attention window size')
+flags.DEFINE_integer("eval_every", 500, "Eval every step")
+flags.DEFINE_integer("D", 5, 'local_attention window size')
 flags.DEFINE_float("learning_rate", 5e-5, "Learning rate [0.00005]")
 flags.DEFINE_float("momentum", 0.9, "Momentum of RMSProp [0.9]")
 flags.DEFINE_float("decay", 0.95, "Decay of RMSProp [0.95]")
-flags.DEFINE_float("dropout", 0.9, "Dropout rate")
+flags.DEFINE_float("dropout", 0.8, "Dropout rate")
 flags.DEFINE_float("l2_rate", 0.0, "l2 rate")
 flags.DEFINE_string("data_dir", "data", "The name of data directory [data]")
 flags.DEFINE_string("dataset", "cnn", "The name of dataset [cnn, dailymail]")
@@ -36,8 +36,10 @@ def fetch_model(_type):
     from model.attentive_model import AttentiveReader as Reader
   elif _type == 'stanford':
     from model.stanford_model import StanfordReader as Reader
+  elif _type == 'stanford2':
+    from model.stanford_model import StanfordReader2 as Reader
   elif _type == 'test':
-    from model.test_model import TestReader as Reader
+    from model.test_model import EmbedReader as Reader
   else:
     raise ValueError(_type)
 

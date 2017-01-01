@@ -6,7 +6,7 @@ import pickle
 from utils import data_to_token_ids, define_gpu
 import json
 import numpy as np
-from attentive_model import AttentiveReader
+# from attentive_model import AttentiveReader
 from collections import namedtuple, Counter
 from sklearn.manifold import TSNE
 from matplotlib import pyplot as plt
@@ -14,7 +14,7 @@ import sys
 
 TensorName = ['loss', 'accuracy', 'attention', 'document',
               'query', 'docu-end', 'quer-end', 'Y', 'dropout_rate',
-              'g_x_W']
+              'score']
 # All_Tensor = Tensor_feed + Tensor_fetch
 name_attr_map = {
     'loss': 'loss',
@@ -26,7 +26,7 @@ name_attr_map = {
     'quer-end': 'q_end',
     'Y': 'y',
     'dropout_rate': 'dropout',
-    'g_x_W': 'score'
+    'score': 'score'
 }
 
 AttrName = map(name_attr_map.get, TensorName)
