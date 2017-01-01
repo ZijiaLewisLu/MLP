@@ -14,7 +14,7 @@ import sys
 
 TensorName = ['loss', 'accuracy', 'attention', 'document',
               'query', 'docu-end', 'quer-end', 'Y', 'dropout_rate',
-              'score']
+              ]
 # All_Tensor = Tensor_feed + Tensor_fetch
 name_attr_map = {
     'loss': 'loss',
@@ -26,7 +26,6 @@ name_attr_map = {
     'quer-end': 'q_end',
     'Y': 'y',
     'dropout_rate': 'dropout',
-    'score': 'score'
 }
 
 AttrName = map(name_attr_map.get, TensorName)

@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.ops import rnn_cell
-from base import BaseModel, apply_attention
+from base import BaseModel
 
 
 class AttentiveReader(BaseModel):
@@ -42,7 +42,7 @@ class AttentiveReader(BaseModel):
         self.u = u
 
         # attention
-        r = apply_attention(self.attention, 2*self.size, d_t, u, 'concat')
+        r = self.apply_attention(self.attention, 2*self.size, d_t, u, 'concat')
 
         # predict
         W_rg = tf.get_variable("W_rg", [2 * self.size, self.size])

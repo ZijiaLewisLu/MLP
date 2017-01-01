@@ -22,23 +22,15 @@ class StanfordReader(BaseModel):
         # representation
         with tf.variable_scope("document_represent"):
             # d_t: N, T, Hidden
-            d_t, d_final_state = self.rnn(embed_d, self.d_end, use_bidirection=self.bidirection)
+            d_t, d_final_state = self.rnn(self.size, embed_d, self.d_end, use_bidirection=self.bidirection)
             d_t = tf.concat(2, d_t)
            
-
         with tf.variable_scope("query_represent"):
-            q_t, q_final_state = self.rnn(embed_q, self.q_end, use_bidirection=self.bidirection)
+            q_t, q_final_state = self.rnn(self.size, embed_q, self.q_end, use_bidirection=self.bidirection)
+            u = self.extract_rnn_state( self.bidirection, q_t, self.q_end )
 
-            if self.bidirection:
-                q_f = tf.unpack(q_t[0], axis=1)
-                q_b = tf.unpack(q_t[-1], axis=1)
-                u = tf.concat(1, [q_f[-1], q_b[0]], name='u')  # N, Hidden*2
-            else:
-                u = tf.unpack(q_t, axis=1)[-1]
-
-
-        d_t = tf.nn.dropout(d_t, keep_prob=self.dropout)
-        u = tf.nn.dropout(u, keep_prob=self.dropout)
+        # d_t = tf.nn.dropout(d_t, keep_prob=self.dropout)
+        # u = tf.nn.dropout(u, keep_prob=self.dropout)
         self.d_t = d_t
         self.u = u
 
@@ -76,14 +68,14 @@ class StanfordReader2(BaseModel):
             # d_t: N, T, Hidden
             d_t, d_final_state = self.rnn( self.size, embed_d, self.d_end, use_bidirection=self.bidirection)
             d_t = tf.concat(2, d_t)
-            d_t = tf.nn.dropout(d_t, keep_prob=self.dropout)
+
 
         with tf.variable_scope("query_represent"):
             q_t, q_final_state = self.rnn( self.size, embed_q, self.q_end, use_bidirection=self.bidirection)
             u = self.extract_rnn_state( self.bidirection, q_t, self.q_end )
-            u = tf.nn.dropout(u, keep_prob=self.dropout)
 
-
+        # d_t = tf.nn.dropout(d_t, keep_prob=self.dropout)
+        # u = tf.nn.dropout(u, keep_prob=self.dropout)
         self.d_t = d_t
         self.u = u
 

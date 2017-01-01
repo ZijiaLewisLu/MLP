@@ -206,9 +206,6 @@ class BaseModel(object):
 
         final = tf.pack(final_state)
         final = tf.squeeze(final, [1])
-
-        print '_extract', final.get_shape()
-
         return final
 
     def extract_rnn_state(self, bidirection, state, seq_end):
@@ -232,9 +229,6 @@ class BaseModel(object):
             raise ValueError(cell_type)
 
         if use_bidirection:            
-            # (TODO) change
-            print 'rnn', hidden_size
-
             h_t, final_state, = tf.nn.bidirectional_dynamic_rnn(
                 cell(hidden_size),
                 cell(hidden_size),
