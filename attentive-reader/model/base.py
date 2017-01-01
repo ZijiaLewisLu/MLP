@@ -211,8 +211,7 @@ class BaseModel(object):
     def extract_rnn_state(self, bidirection, state, seq_end):
         if bidirection:
             f = self._extract_state(state[0], seq_end, need_unpack=True)
-            bhidden = tf.reverse(state[1], [True, False, True], name='reverse_bw')
-            b = self._extract_state( bhidden, seq_end )
+            b = tf.unpack( state[1], axis=1 )[0]
             final = tf.concat(1, [f, b])  # N, Hidden*2
         else:
             final = self._extract_state( state, need_unpack=False )
