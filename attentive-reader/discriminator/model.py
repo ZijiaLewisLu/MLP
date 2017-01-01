@@ -4,6 +4,13 @@ import tensorflow as tf
 
 class Base(object):
 
+    def construct_intputs(self, batch_size, sequence_length):
+        self.data = tf.placeholder(
+            tf.float32, [batch_size, sequence_length, 2], 'data')
+        self.d_len = tf.placeholder(tf.int32, [batch_size], 'd_len')
+        self.label = tf.placeholder(tf.int32, [batch_size, 3], 'label')
+        self.global_step = tf.Variable(1, name='global_step', trainable=False)
+
     def construct_loss_and_accuracy(self, score, label):
         self.loss = tf.nn.softmax_cross_entropy_with_logits(
             score, label, name='loss')
@@ -143,7 +150,7 @@ class One_Hot(Base):
                  num_layer=2,
                  sequence_length=1000,
                  clip_norm=6,
-                 vocab_size=50003,
+                 vocab_size=574,
                  reuse=True):
 
         self.data = tf.placeholder(
@@ -152,9 +159,13 @@ class One_Hot(Base):
         self.label = tf.placeholder(tf.int32, [batch_size, 3], 'label')
         self.global_step = tf.Variable(1, name='global_step', trainable=False)
 
+        self.learning_rate = learning_rate
+        self.clip_norm = clip_norm
+
         wid, ascore = tf.unpack(self.data, axis=2)  # N, sL
+        wid = tf.to_int32(wid)
         self.one_hot = tf.one_hot(wid, vocab_size, axis=-1, name='one_hot')
-        ascore = tf.expand_dims(ascore, axis=-1)
+        ascore = tf.expand_dims(ascore, dim=-1)
         self.features = self.one_hot * ascore
 
         if reuse:
@@ -189,6 +200,63 @@ class One_Hot(Base):
         self.final_sparsity = tf.nn.zero_fraction(
             final, name='final_hidden_sparsity')
         self.final_relu = tf.nn.relu(self.final, name='final_relu')
+
+        W = tf.get_variable('W', [hidden_size, 3], dtype=tf.float32)
+        self.score = tf.matmul(self.final_relu, W, name='score')
+
+        self.construct_loss_and_accuracy(self.score, self.label)
+        self.construct_summary(add_gv_sum=True)
+
+
+
+class CNN(Base):
+    def __init__(self, batch_size, hidden_size,
+                 learning_rate=1e-4,
+                 num_layer=2,
+                 sequence_length=1000,
+                 clip_norm=6,
+                 vocab_size=50003,
+                 window_size=10,
+                 reuse=True):
+
+        self.learning_rate = learning_rate
+        self.clip_norm = clip_norm
+
+        self.construct_intputs( batch_size, sequence_length )
+
+        with tf.variable_scope('CNN'):
+            feat = tf.expand_dims( self.data, dim=2 ) # N, sL, 1, 2
+            filter_0 = tf.get_variable( 'filter_0', [window_size, 1, 2, 10], dtype=tf.float32 )
+            filter_1 = tf.get_variable( 'filter_1', [window_size, 1, 10, 10], dtype=tf.float32)
+
+            feat = tf.nn.conv2d( feat, filter_0, [1,1,1,1], 'SAME', name='conv_1')
+            maxpool = tf.nn.max_pool( feat, [1,8,1,1], [1,4,1,1], 'VALID', name='maxpool_1')
+            feat = tf.nn.conv2d( maxpool, filter_1, [1,1,1,1], 'SAME', name='conv_2')
+            maxpool = tf.nn.max_pool( feat, [1,4,1,1], [1,2,1,1], 'VALID', name='maxpool_2')
+
+            self.features = tf.squeeze( maxpool, squeeze_dims=[2] )
+
+
+        if reuse:
+            self.cells = [tf.nn.rnn_cell.LSTMCell(
+                hidden_size, state_is_tuple=True)] * num_layer
+        else:
+            self.cells = [tf.nn.rnn_cell.LSTMCell(
+                hidden_size, state_is_tuple=True) for _ in range(num_layer)]
+
+        cell = tf.nn.rnn_cell.MultiRNNCell(self.cells, state_is_tuple=True)
+
+        print self.features.get_shape()
+        self.hidden, last_state = tf.nn.rnn(
+            cell,
+            tf.unpack(self.features, axis=1),
+            dtype=tf.float32,
+        )
+
+        self.final = self.hidden[-1]
+        self.final_relu = tf.nn.relu(self.final, name='final_relu')
+        self.final_sparsity = tf.nn.zero_fraction(
+            self.final_relu, name='final_hidden_sparsity')
 
         W = tf.get_variable('W', [hidden_size, 3], dtype=tf.float32)
         self.score = tf.matmul(self.final_relu, W, name='score')

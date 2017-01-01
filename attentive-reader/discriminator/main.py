@@ -4,10 +4,14 @@ import time
 import os
 import h5py
 import tensorflow as tf
-from model import Discriminator
 
-VFILE = './Data.h5'
-TFILE = './Validate.h5'
+# import sys
+# sys.path.insert(0, '../utils')
+
+# from utils import define_gpu
+
+# VFILE = './Data.h5'
+# TFILE = './Validate.h5'
 
 
 def Topk(array, k):
@@ -45,13 +49,15 @@ def data_iter(batch_size, data, d_len, label, k=None, shuffle_data=True):
             np.random.shuffle(l)
             np.random.shuffle(dl)
 
+
+        oh_label.fill(0)
+
         try:
             oh_label[range(batch_size), l - 1] = 1
         except:
             import ipdb
             ipdb.set_trace()
 
-        oh_label.fill(0)
 
         if k:
             d_topk.fill(0)
@@ -68,13 +74,9 @@ def data_iter(batch_size, data, d_len, label, k=None, shuffle_data=True):
 def prepare_data(batch_size, fname, vocab_size=50003, topk=None, shuffle=True):
 
     with h5py.File(fname, 'r') as hf:
-        data = hf.get('data')
-        dlen = hf.get('dlen')
-        label = hf.get('label')
-
-        data = np.array(data)
-        dlen = np.array(dlen)
-        label = np.array(label)
+        data = hf.get('data')[()]
+        dlen = hf.get('dlen')[()]
+        label = hf.get('label')[()]
 
     itr = data_iter(batch_size, data, dlen, label, shuffle_data=shuffle, k=topk)
     step = itr.next()
@@ -84,18 +86,19 @@ def prepare_data(batch_size, fname, vocab_size=50003, topk=None, shuffle=True):
 def create_flag():
     flags = tf.app.flags
     flags.DEFINE_integer("epoch", 15, "Epoch to train [40]")
-    flags.DEFINE_integer("batch_size", 20, "")
-    flags.DEFINE_integer("gpu", 3, "the number of gpus to use")
+    flags.DEFINE_integer("batch_size", 64, "")
+    flags.DEFINE_integer("gpu", 1, "the number of gpus to use")
     flags.DEFINE_integer("data_size", None, "Number of files to train on")
     flags.DEFINE_integer("hidden_size", 64, "")
-    flags.DEFINE_integer("eval_every", 1000, "Eval every step")
-    flags.DEFINE_integer("layer", 2, "")
+    flags.DEFINE_integer("eval_every", 400, "Eval every step")
+    flags.DEFINE_integer("layer", 1, "")
     flags.DEFINE_integer("topk", None, "")
 
     flags.DEFINE_float("learning_rate", 5e-2, "Learning rate")
     flags.DEFINE_string("log_dir", "log", "")
     flags.DEFINE_string("load_path", None, "The path to old model. [None]")
     flags.DEFINE_string("data_path", 'Data_Big.h5', "")
+    flags.DEFINE_string("model", "onehot", "")
 
     # flags.DEFINE_string("optim", 'RMS', "The optimizer to use [RMS]")
     flags.DEFINE_boolean('reuse', True, '')
@@ -111,16 +114,29 @@ def create_flag():
 
 def main():
     FLAGS = create_flag()
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(FLAGS.gpu)
 
+    # gpu_list = define_gpu( FLAGS.gpu )
+    gpu_list = [ FLAGS.gpu ]
+    os.environ['CUDA_VISIBLE_DEVICES'] = ",".join( map(str, gpu_list) )
+    print 'Using GPU: %s' % gpu_list
 
-    M = Discriminator(
+    if FLAGS.model == 'origin':
+        from model import Discriminator as m
+    elif FLAGS.model == 'onehot':
+        from model import One_Hot as m
+    elif FLAGS.model == 'cnn':
+        from model import CNN as m
+    else:
+        raise ValueError(FLAGS.model)
+
+    M = m(
             FLAGS.batch_size, FLAGS.hidden_size,
             learning_rate=FLAGS.learning_rate,
             sequence_length=FLAGS.topk if FLAGS.topk else 1000,
             num_layer=FLAGS.layer,
             reuse=FLAGS.reuse,
-        )        
+        )
+    print 'Model Created'        
 
     log_dir = "%s/%s" % (FLAGS.log_dir, time.strftime("%m_%d_%H_%M"))
     save_dir = os.path.join(log_dir, 'ckpts')
@@ -130,7 +146,12 @@ def main():
     os.makedirs(save_dir)
     with open(log_dir + '/Flags.js', 'w') as f:
         json.dump(FLAGS.__flags, f, indent=4)
-    print '  Writing log to %s' % log_dir
+    print 'Writing log to %s' % log_dir
+
+    if 'New' in FLAGS.data_path:
+        VFILE = './New_Val.h5'
+    else: 
+        VFILE = './Validate.h5'
 
     with tf.Session() as sess:
         writer = tf.train.SummaryWriter(log_dir, sess.graph)
@@ -138,7 +159,6 @@ def main():
                  M.train_summary,
                  # M.prediction, M.right_label,
                  # M.correct
-
                  ]
         vfetch = [M.loss, M.accuracy, M.validate_summary]
 
@@ -149,6 +169,8 @@ def main():
         for e in range(FLAGS.epoch):
             titer, tstep = prepare_data(
                 FLAGS.batch_size, FLAGS.data_path, shuffle=True, topk=FLAGS.topk)
+
+            print tstep
 
             for data in titer:
                 gstep, loss, accuracy, _, sum_str = M.step(sess, data, tfetch)
@@ -178,3 +200,8 @@ def main():
 
                     print 'Evaluate Acc: %.4f Loss: %.4f' % \
                                     (vrunning_acc/vstep, vrunning_loss/vstep)
+
+
+
+if __name__ == '__main__':
+    main()
