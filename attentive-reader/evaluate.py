@@ -14,6 +14,7 @@ import sys
 
 TensorName = ['loss', 'accuracy', 'attention', 'document',
               'query', 'docu-end', 'quer-end', 'Y', 'dropout_rate',
+              'g_x_W'
               ]
 # All_Tensor = Tensor_feed + Tensor_fetch
 name_attr_map = {
@@ -26,6 +27,7 @@ name_attr_map = {
     'quer-end': 'q_end',
     'Y': 'y',
     'dropout_rate': 'dropout',
+    'g_x_W':'score'
 }
 
 AttrName = map(name_attr_map.get, TensorName)
@@ -162,6 +164,10 @@ def Topk(array, k):
 
 
 def analyse(doc, answer, attention):
+    """
+    analyze the accuracy of P, C, B method
+    return three bool array
+    """
     batch_size = doc.shape[0]
     att_pred = attention.argmax(1)
     ap_ids = doc[range(batch_size), att_pred].astype(np.int)
@@ -184,6 +190,10 @@ def analyse(doc, answer, attention):
     return pright, cright, both
 
 def stat(atten, doc, topk):
+    """
+    extract each token's importance assigned by Attention Distribution
+    return sorted list of [ entity, occur_count, cumulative_weight ]
+    """
     top_index = Topk(atten, topk) # indexes
     top_atten = atten[top_index]
     top_wordid = doc[top_index]

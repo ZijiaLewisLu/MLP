@@ -66,6 +66,8 @@ def data_iter(batch_size, data, d_len, label, k=None, shuffle_data=True):
                 top_idx = sorted(top_idx)
                 d_topk[i] = d[i,top_idx,:] # i, 2, k
 
+            dl[:] = k
+
             yield s, d_topk, dl, oh_label
         else:
             yield s, d,      dl, oh_label
@@ -97,7 +99,7 @@ def create_flag():
     flags.DEFINE_float("learning_rate", 5e-2, "Learning rate")
     flags.DEFINE_string("log_dir", "log", "")
     flags.DEFINE_string("load_path", None, "The path to old model. [None]")
-    flags.DEFINE_string("data_path", 'Data_Big.h5', "")
+    flags.DEFINE_string("data_path", './data/Data_Big.h5', "")
     flags.DEFINE_string("model", "onehot", "")
 
     # flags.DEFINE_string("optim", 'RMS', "The optimizer to use [RMS]")
@@ -126,6 +128,8 @@ def main():
         from model import One_Hot as m
     elif FLAGS.model == 'cnn':
         from model import CNN as m
+    elif FLAGS.model == 'sigmoid':
+        from model import Sigmoid as m
     else:
         raise ValueError(FLAGS.model)
 
@@ -149,14 +153,15 @@ def main():
     print 'Writing log to %s' % log_dir
 
     if 'New' in FLAGS.data_path:
-        VFILE = './New_Val.h5'
+        VFILE = './data/New_Val.h5'
     else: 
-        VFILE = './Validate.h5'
+        VFILE = './data/Validate.h5'
 
     with tf.Session() as sess:
         writer = tf.train.SummaryWriter(log_dir, sess.graph)
         tfetch = [M.global_step, M.loss, M.accuracy, M.train_op,
                  M.train_summary,
+                 M.prediction,
                  # M.prediction, M.right_label,
                  # M.correct
                  ]
@@ -173,7 +178,7 @@ def main():
             print tstep
 
             for data in titer:
-                gstep, loss, accuracy, _, sum_str = M.step(sess, data, tfetch)
+                gstep, loss, accuracy, _, sum_str, score = M.step(sess, data, tfetch)
 
                 running_acc += accuracy
                 running_loss += loss.mean()
