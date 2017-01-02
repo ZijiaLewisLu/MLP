@@ -132,7 +132,7 @@ class Sigmoid(Base):
     def step(self, sess, data, fetch):
         idx, d, dl, l = data
 
-        l = (l[:,1] == 0).astype(np.int)
+        l = (l[:,0] == 0).astype(np.int)
         l = np.expand_dims(l, -1)
         rslt = sess.run(fetch,
                         feed_dict={
@@ -198,10 +198,10 @@ class RNN(Base):
 
         self.final_sparsity = tf.nn.zero_fraction(
             final, name='final_hidden_sparsity')
-        self.final_relu = tf.nn.relu(self.final, name='final_relu')
+        # self.final_relu = tf.nn.relu(self.final, name='final_relu')
 
         W = tf.get_variable('W', [hidden_size, 3], dtype=tf.float32)
-        self.score = tf.matmul(self.final_relu, W, name='score')
+        self.score = tf.matmul(self.final, W, name='score')
 
         self.construct_loss_and_accuracy(self.score, self.label)
         self.construct_summary(add_gv_sum=True)

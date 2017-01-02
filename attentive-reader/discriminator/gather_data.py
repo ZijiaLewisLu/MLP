@@ -76,7 +76,7 @@ for data in titer:
     #    break
 
     acc, prob, atten = step(data, M, sess, fetch)
-    c, p, both = analyse(doc, ans, atten)
+    p, c, both = analyse(doc, ans, atten)
 
     doc = doc[both]
     atten = atten[both]

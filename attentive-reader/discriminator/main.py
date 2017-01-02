@@ -123,7 +123,7 @@ def main():
     print 'Using GPU: %s' % gpu_list
 
     if FLAGS.model == 'origin':
-        from model import Discriminator as m
+        from model import RNN as m
     elif FLAGS.model == 'onehot':
         from model import One_Hot as m
     elif FLAGS.model == 'cnn':

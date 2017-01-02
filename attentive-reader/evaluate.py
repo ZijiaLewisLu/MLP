@@ -159,6 +159,8 @@ def step(data, M, sess, fetch):
 
 def Topk(array, k):
     top = np.argpartition(-array, k)[:k]
+    # print top.shape
+    # print array.shape
     pair = sorted(zip(array[top], top), key=lambda x: x[0], reverse=True)
     return [_[1] for _ in pair]
 
