@@ -13,6 +13,7 @@ import h5py
 # from sklearn.manifold import TSNE
 # from collections import Counter
 
+
 log_path = sys.argv[1]
 if len(sys.argv) == 3:
     gpu = sys.argv[2]
