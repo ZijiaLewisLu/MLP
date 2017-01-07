@@ -147,7 +147,7 @@ class Sigmoid(Base):
         return rslt         
 
 
-class RNN(Base):
+class RNN(Sigmoid):
 
     def __init__(self, batch_size, hidden_size,
                  learning_rate=1e-4,
@@ -156,11 +156,7 @@ class RNN(Base):
                  clip_norm=6,
                  reuse=True):
 
-        self.data = tf.placeholder(
-            tf.float32, [batch_size, sequence_length, 2], 'data')
-        self.d_len = tf.placeholder(tf.int32, [batch_size], 'd_len')
-        self.label = tf.placeholder(tf.int32, [batch_size, 3], 'label')
-        self.global_step = tf.Variable(1, name='global_step', trainable=False)
+        self.construct_intputs(batch_size, sequence_length)
 
         self.clip_norm = clip_norm
         self.learning_rate = learning_rate
@@ -189,7 +185,7 @@ class RNN(Base):
             final_state = []
             for h, b in zip(unpack, begins):
                 f = tf.slice(h, b, [1, hidden_size])
-                print f.get_shape()
+                # print f.get_shape()x
                 final_state.append(f)
 
             final = tf.pack(final_state)
@@ -200,7 +196,7 @@ class RNN(Base):
             final, name='final_hidden_sparsity')
         # self.final_relu = tf.nn.relu(self.final, name='final_relu')
 
-        W = tf.get_variable('W', [hidden_size, 3], dtype=tf.float32)
+        W = tf.get_variable('W', [hidden_size, 1], dtype=tf.float32)
         self.score = tf.matmul(self.final, W, name='score')
 
         self.construct_loss_and_accuracy(self.score, self.label)

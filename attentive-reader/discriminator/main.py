@@ -31,6 +31,7 @@ def data_iter(batch_size, data, d_len, label, k=None, shuffle_data=True):
         d_topk = np.zeros( [batch_size, k, 2], dtype=np.float32 )
     oh_label = np.zeros([batch_size, 3], dtype=np.int)
 
+    order = range(batch_size)
     for s in range(steps):
 
         head = s * batch_size
@@ -45,18 +46,21 @@ def data_iter(batch_size, data, d_len, label, k=None, shuffle_data=True):
             dl = np.concatenate([d_len[head:], d_len[:end - N]], axis=0)
 
         if shuffle_data:
-            np.random.shuffle(d)
-            np.random.shuffle(l)
-            np.random.shuffle(dl)
+            np.random.shuffle(order)
+            d = d[order]
+            dl = dl[order]
+            l = l[order]
 
 
         oh_label.fill(0)
 
         try:
             oh_label[range(batch_size), l - 1] = 1
-        except:
-            import ipdb
-            ipdb.set_trace()
+        except Exception, e:
+            print e
+            assert False 
+            #import ipdb
+            #ipdb.set_trace()
 
 
         if k:

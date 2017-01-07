@@ -9,6 +9,7 @@ class AttentiveReader(BaseModel):
     def prepare_model(self, parallel=False):
 
         self.construct_inputs()
+        # self.attention = 'concat'
 
         # Embeding
         self.emb = tf.get_variable("emb", [self.vocab_size, self.size])

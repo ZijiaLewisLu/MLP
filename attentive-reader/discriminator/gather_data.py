@@ -61,9 +61,12 @@ print 'Load!'
 
 
 
-DATA = []
-LABEL = []
+DOC = []
 DLEN = []
+QUE = []
+QLEN = []
+LABEL = []
+
 fetch = [M.accuracy, logit, M.attention]
 print 'Start!'
 for data in titer:
@@ -71,6 +74,8 @@ for data in titer:
     doc = data[1]
     ans = data[-1]
     d_len = data[2]
+    query = data[3]
+    q_len = data[4]
 
     sys.stdout.write( '\r%d' % idx )
     # if idx == 300:
@@ -80,12 +85,16 @@ for data in titer:
     p, c, both = analyse(doc, ans, atten)
 
     doc = doc[both]
-    atten = atten[both]
     d_len = d_len[both]
+    query = query[both]
+    q_len = q_len[both]
+    atten = atten[both]
 
-    tmp = np.stack( [doc, atten], axis=2 )
-    DATA.append(tmp)
+    # tmp = np.stack( [doc, atten], axis=2 )
+    DOC.append(doc)
     DLEN.append(d_len)
+    QUE.append(query)
+    QLEN.append(q_len)
 
     c = c[both]
     p = p[both]
@@ -95,17 +104,19 @@ for data in titer:
     label = c + p
     LABEL.append(label)
 
-# print len(DATA)
+doc_all = np.concatenate( DOC )
+dlen_all = np.concatenate( DLEN )
+que_all = np.concatenate( QUE )
+qlen_all = np.concatenate( QLEN )
+label_all = np.concatenate( LABEL )
 
-d = np.concatenate( DATA )
-l = np.concatenate( LABEL )
-dl = np.concatenate( DLEN )
+print doc_all.shape
+print label_all.shape
+print dlen_all.shape
 
-print d.shape
-print l.shape
-print dl.shape
-
-with h5py.File('Data_Big.h5', 'w') as hf:
-    hf.create_dataset('data', data=d)
-    hf.create_dataset('dlen', data=dl)
-    hf.create_dataset('label', data=l)
+with h5py.File('FULL_Big_BOOST.h5', 'w') as hf:
+    hf.create_dataset('doc', data=doc_all)
+    hf.create_dataset('dlen', data=dlen_all)
+    hf.create_dataset('que', data=que_all)
+    hf.create_dataset('qlen', data=qlen_all)
+    hf.create_dataset('label', data=label_all)

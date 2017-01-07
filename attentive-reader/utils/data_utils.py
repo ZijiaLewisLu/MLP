@@ -33,10 +33,10 @@ import random
 from tensorflow.python.platform import gfile
 
 from nltk import TreebankWordTokenizer
-from string import punctuation
+# from string import punctuation
 _tokenrize = TreebankWordTokenizer().tokenize
 
-_WORD_SPLIT = re.compile("([.,!?\"':;)(])")
+# _WORD_SPLIT = re.compile("([.,!?\"':;)(])")
 _DIGIT_RE = re.compile(r"\d")
 # word_tokenize = RegexpTokenizer(r'\w+').tokenize
 
@@ -62,7 +62,7 @@ def create_vocab(doc_path, cap=None, save_full_to=None, normalize_digits=False):
                 f[t] = 1
 
     print('Calculate Frequency done %4.4f' % (time.time() - start))
-    return f
+    # return f
 
     if save_full_to:
         with open(save_full_to, 'a+') as save:
@@ -87,40 +87,38 @@ def create_vocab(doc_path, cap=None, save_full_to=None, normalize_digits=False):
     return voca
 
 
-def token(words):
-    ts = _tokenrize(words)
-    ts = [x.strip(punctuation) for x in ts]
+def clean_str(string):
+
+    string = re.sub(r"(?<=\d),(?=\d)", '', string)
+    string = re.sub(r"(?<=\w)-(?=\w)", ' - ', string)
+    # string = re.sub(r"[^A-Za-z0-9().,!?\'\`]", " ", string)
+    # conflict with nltk tokenizer
+    # string = re.sub(r"\'s", " \'s", string)
+    # string = re.sub(r"\'ve", " \'ve", string)
+    # string = re.sub(r"n\'t", " n\'t", string)
+    # string = re.sub(r"\'re", " \'re", string)
+    # string = re.sub(r"\'d", " \'d", string)
+    # string = re.sub(r"\'ll", " \'ll", string)
+    # string = re.sub(r"\.", " . ", string)
+    # string = re.sub(r",", " , ", string)
+    # string = re.sub(r"!", " ! ", string)
+    # string = re.sub(r"\(", " ( ", string)
+    # string = re.sub(r"\)", " ) ", string)
+    # string = re.sub(r"\?", " ? ", string)
+    string = re.sub(r"\'", " \' ", string)
+    # string = re.sub(r"\s{2,}", " ", string)
+    return string.strip().lower()
+
+
+def token(string):
+    string = clean_str(string)
+    ts = _tokenrize(string)
+    # ts = [x.strip(punctuation) for x in ts]
     ts = [x for x in ts if len(x) > 0]
     return ts
 
-
-def sentence_to_token_ids(sentence, vocabulary,
-                          tokenizer=token, normalize_digits=True):
-    """Convert a string to list of integers representing token-ids.
-
-    For example, a sentence "I have a dog" may become tokenized into
-    ["I", "have", "a", "dog"] and with vocabulary {"I": 1, "have": 2,
-    "a": 4, "dog": 7"} this function will return [1, 2, 4, 7].
-
-    Args:
-      sentence: a string, the sentence to convert to token-ids.
-      vocabulary: a dictionary mapping tokens to integers.
-      tokenizer: a function to use to tokenize each sentence;
-        if None, basic_tokenizer will be used.
-      normalize_digits: Boolean; if true, all digits are replaced by 0s.
-
-    Returns:
-      a list of integers, the token-ids for the sentence.
-    """
-    words = tokenizer(sentence)
-    if not normalize_digits:
-        return [vocabulary.get(w, UNK_ID) for w in words]
-    # Normalize digits by 0 before looking words up in the vocabulary.
-    return [vocabulary.get(re.sub(_DIGIT_RE, "0", w), UNK_ID) for w in words]
-
-
 def data_to_token_ids(data_path, target_path, vocab,
-                      tokenizer=token, normalize_digits=False, save=True):
+                      tokenizer=token, normalize_digits=False, save=True, relabeling=False):
     """Tokenize data file and turn into token-ids using given vocabulary file.
 
     This function loads data line-by-line from data_path, calls the above
@@ -135,37 +133,49 @@ def data_to_token_ids(data_path, target_path, vocab,
         if None, basic_tokenizer will be used.
       normalize_digits: Boolean; if true, all digits are replaced by 0s.
     """
-    # if not gfile.Exists(target_path):
-    if True:
-        with open(data_path, "r") as data_file:
-            counter = 0
-            results = []
-            for line in data_file:
-                if counter == 0:
-                    results.append(line)
-                elif counter == 4:
-                    entity, ans = line.split(":", 1)
-                    try:
-                        results.append("%s:%s" % (vocab[entity[:]], ans))
-                    except:
-                        continue
-                else:
-                    token_ids = sentence_to_token_ids(line, vocab, tokenizer,
-                                                      normalize_digits)
-                    results.append(" ".join([str(tok)
-                                             for tok in token_ids]) + "\n")
-                if line == "\n":
-                    counter += 1
+    entity_dict = {}
+    def relabel(word):
+        if not re.match('entity\d+', word):
+            return word
 
-            try:
-                len_d, len_q = len(results[2].split()), len(results[4].split())
-            except:
-                return
-            if save:
-                with open("%s_%s" % (target_path, len_d + len_q), "w") as tokens_file:
-                    tokens_file.writelines(results)
-            return results
-        # assert data_file.closed and tokens_file.closed, (data_file.closed , tokens_file.closed)
+        if word not in entity_dict:
+            entity_dict[word] = 'entity%d'% len(entity_dict)
+        
+        return entity_dict[word]
+
+
+    with open(data_path, "r") as data_file:
+        counter = 0
+        results = []
+        for line in data_file:
+            if counter == 0:
+                results.append(line)
+            elif counter == 4:
+                entity, ans = line.split(":", 1)
+                try:
+                    results.append("%s:%s" % (vocab[entity[:]], ans))
+                except:
+                    continue
+            else:
+                words = tokenizer(line)
+                if relabeling:
+                    words = map( relabel, words )
+                if normalize_digits:
+                    words = [ re.sub(_DIGIT_RE, "0", w) for w in words ]    
+                words = [vocab.get(w, UNK_ID) for w in words]
+                results.append(" ".join([str(tok)
+                                         for tok in token_ids]) + "\n")
+            if line == "\n":
+                counter += 1
+
+        try:
+            len_d, len_q = len(results[2].split()), len(results[4].split())
+        except:
+            return
+        if save:
+            with open("%s_%s" % (target_path, len_d + len_q), "w") as tokens_file:
+                tokens_file.writelines(results)
+        return results
 
 
 def get_all_context(dir_name, context_fname):
