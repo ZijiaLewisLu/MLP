@@ -40,6 +40,8 @@ def fetch_model(_type):
     from model.stanford_model import StanfordReader2 as Reader
   elif _type == 'test':
     from model.test_model import EmbedReader as Reader
+  elif _type == 'select':
+    from model.selector import Selector as Reader
   else:
     raise ValueError(_type)
 

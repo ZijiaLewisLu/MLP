@@ -193,6 +193,11 @@ def main():
                         (gstep, e, running_acc / 20.0, running_loss / 20.0)
                     running_acc = 0.0
                     running_loss = 0.0
+                    
+                if (gstep-1) % 5 == 0:
+                    print 'prediction'
+                    print score.mean()
+                    print '\n\n'
 
                 if gstep % FLAGS.eval_every == 0:
 
@@ -201,7 +206,6 @@ def main():
                     vrunning_loss = 0.0
 
                     for data in viter:
-                        # print data[0]
                         loss, accuracy, sum_str = M.step(sess, data, vfetch)
                         vrunning_acc += accuracy
                         vrunning_loss+= loss.mean()

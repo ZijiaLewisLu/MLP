@@ -121,7 +121,7 @@ class Sigmoid(Base):
             self.gvs, global_step=self.global_step)
 
     def _construct_accuracy(self, score, label):
-        self.prediction = tf.greater(score, 0.5, name='prediction')
+        self.prediction = tf.greater(score, 0, name='prediction')
         # self.right_label = tf.argmax(label, 1, name='right_label')
         pred = tf.to_float(self.prediction)
         self.correct = tf.equal(
@@ -256,9 +256,9 @@ class One_Hot(Sigmoid):
         self.final_relu = tf.nn.relu(self.final, name='final_relu')
 
         W = tf.get_variable('W', [hidden_size, 1], dtype=tf.float32)
-        B = tf.get_variable('B', [1], dtype=tf.float32)
-        self.score = tf.matmul(self.final_relu, W)
-        self.score = tf.add( self.score, B, name='score' )
+        # B = tf.Variable(0, dtype=tf.float32, name='B')
+        self.score = tf.matmul(self.final_relu, W, name='score')
+        # self.score = tf.add( self.score, B, name='score' )
 
         self.construct_loss_and_accuracy(self.score, self.label)
         self.construct_summary(add_gv_sum=True)

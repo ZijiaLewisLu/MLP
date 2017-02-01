@@ -1,7 +1,23 @@
 import tensorflow as tf
 # from tensorflow.python.ops import rnn_cell
 from base import BaseModel
+import numpy as np
+import h5py
 
+import time
+
+def fetch_data(fname='./FULL_BIG_BOOST.h5', val_size=3000):
+    with h5py.File(fname, 'r') as hf:
+        doc = hf['doc'][()]
+        dlen = hf['dlen'][()]
+        que = hf['que'][()]
+        qlen = hf['qlen'][()]
+        y = hf['label'][()]
+    
+    data = [ doc, dlen, que, qlen, y ]
+    train_data = [ _[val_size:] for _ in data ]
+    validate_data = [ _[:val_size] for _ in data ]
+    return train_data, validate_data
 
 class Selector(BaseModel):
     """Attentive Reader."""
@@ -62,17 +78,17 @@ class Selector(BaseModel):
             tf.int32, [self.batch_size, self.max_query_length], name='query')
         self.d_end = tf.placeholder(tf.int32, self.batch_size, name='docu-end')
         self.q_end = tf.placeholder(tf.int32, self.batch_size, name='quer-end')
-        self.y = tf.placeholder(
+        self.label = tf.placeholder(
             tf.float32, [self.batch_size, 1], name='Y')
         self.dropout = tf.placeholder(tf.float32, name='dropout_rate')
         
     def construct_loss_and_summary(self, score, parallel=False):
 
         self.loss = tf.nn.sigmoid_cross_entropy_with_logits(
-            score, self.y, name='loss')
+            score, self.label, name='loss')
         loss_sum = tf.scalar_summary("T_loss", tf.reduce_mean(self.loss))
         
-        self.prediction = tf.greater(score, 0.5, name='prediction')
+        self.prediction = tf.greater(score, 0, name='prediction')
         pred = tf.to_float(self.prediction)
 
         self.correct = tf.equal(
@@ -134,18 +150,19 @@ class Selector(BaseModel):
         self.validate_sum = tf.merge_summary(
             [embed_sum, v_loss_sum, v_acc_sum])
    
-    def step(self, sess, data, fetch): 
-        batch_idx, docs, d_end, queries, q_end, y = data
+    def step(self, sess, data, fetch, dropout_rate): 
+        batch_idx, docs, d_end, queries, q_end, label = data
         
-        y = (y[:,0] == 0).astype(np.int)
-        y = np.expand_dims(y, -1)
+        # not the common word
+        label = (label[:,1] == 0).astype(np.int)
+        label = np.expand_dims(label, -1)
         
         rslt = sess.run( fetch,
                 feed_dict={ self.document: docs,
                             self.query: queries,
                             self.d_end: d_end,
                             self.q_end: q_end,
-                            self.y: y,
+                            self.label: label,
                             self.dropout: dropout_rate,
                              }
                            )
@@ -186,20 +203,17 @@ class Selector(BaseModel):
         start_time = time.time()
         ACC = []
         LOSS = []
-        train_files, validate_files = fetch_files(
-            data_dir, dataset_name, vocab_size)
+        train_data, validate_data = fetch_data()
+        
         if data_size:
-            train_files = train_files[:data_size]
+            train_data = [ _[:data_size] for _ in train_data ]
         validate_size = int(
-            min(max(20.0, float(len(train_files)) * val_rate), len(validate_files)))
+            min(max(20.0, float(len(train_data[0])) * val_rate), len(validate_data[0])))
         print(" [*] Validate_size %d" % validate_size)
 
         for epoch_idx in xrange(epoch):
             # load data
-            train_iter = data_iter(train_files, self.max_nsteps, self.max_query_length,
-                                   batch_size=self.batch_size,
-                                   vocab_size=self.vocab_size,
-                                   shuffle_data=True)
+            train_iter = data_iter(self.batch_size, train_data, shuffle_data=True)
             tsteps = train_iter.next()
 
             # train
@@ -207,10 +221,11 @@ class Selector(BaseModel):
             running_loss = 0
             for data in train_iter:
                 batch_idx, docs, d_end, queries, q_end, y = data
-                _, summary_str, cost, accuracy, gs = self.step( sess, data, 
+                _, summary_str, cost, accuracy, gs, pred = self.step( sess, data, 
                                 [self.train_op, self.train_sum, self.loss, self.accuracy,
                                     self.gras,
-                                ])
+                                    self.prediction
+                                ], dropout_rate)
 
                 writer.add_summary(summary_str, counter)
                 running_acc += accuracy
@@ -222,6 +237,10 @@ class Selector(BaseModel):
                     running_acc = 0
                 counter += 1
 
+                if (counter+1) % 30 == 0:
+                    print '-----------------check prediction----------------'
+                    print (y[:,1]==0).mean(), pred.mean()
+                
                 if False:
                     for name, g in zip(self.gname, gs):
                         _n = norm(g)
@@ -230,32 +249,34 @@ class Selector(BaseModel):
 
                 if (counter + 1) % eval_every == 0:
                     # validate
-                    running_acc = 0
-                    running_loss = 0
+                    vrunning_acc = 0
+                    vrunning_loss = 0
 
                     idxs = np.random.choice(
-                        len(validate_files), size=validate_size)
-                    files = [validate_files[idx] for idx in idxs]
-                    validate_iter = data_iter(files, self.max_nsteps, self.max_query_length,
-                                              batch_size=self.batch_size,
-                                              vocab_size=self.vocab_size,
-                                              shuffle_data=True)
+                        len(validate_data), size=validate_size)
+                    _vdata = [ _[idxs] for _ in validate_data ]
+                    validate_iter = data_iter(self.batch_size, _vdata, shuffle_data=True)
                     vsteps = validate_iter.next()
 
                     for data in validate_iter:
                         batch_idx, docs, d_end, queries, q_end, y = data
-                        validate_sum_str, cost, accuracy = self.step( sess, data, 
-                                                                     [self.validate_sum, self.loss, self.accuracy])
+                        validate_sum_str, cost, accuracy, pred = self.step( sess, data, 
+                                                                     [self.validate_sum, self.loss, self.accuracy, self.prediction],
+                                                                    1.0)
                         writer.add_summary(validate_sum_str, vcounter)
-                        running_acc += accuracy
-                        running_loss += np.mean(cost)
-                        vcounter += 1
+                        vrunning_acc += accuracy
+                        vrunning_loss += np.mean(cost)
+                        vcounter += 1 
+                        
+                        if batch_idx % 20 == 0:
+                            print '-----------------[V]check prediction----------------'
+                            print (y[:,1]==0).mean(), pred.mean()
 
-                    ACC.append(running_acc / vsteps)
-                    LOSS.append(running_loss / vsteps)
+                    ACC.append(vrunning_acc / vsteps)
+                    LOSS.append(vrunning_loss / vsteps)
                     vcounter += vsteps
                     print("Epoch: [%2d] Validation time: %4.4f, loss: %.8f, accuracy: %.8f"
-                          % (epoch_idx, time.time() - start_time, running_loss / vsteps, running_acc / vsteps))
+                          % (epoch_idx, time.time() - start_time, vrunning_loss / vsteps, vrunning_acc / vsteps))
 
                     # save
                     self.save(sess, log_dir, global_step=counter)
@@ -264,7 +285,8 @@ class Selector(BaseModel):
 
             
             
-def data_iter(batch_size, doc, d_len, que, q_len, label, shuffle_data=True):
+def data_iter(batch_size, data, shuffle_data=True):
+    doc, d_len, que, q_len, label = data
     N = doc.shape[0]
 
     steps = np.ceil(N / float(batch_size))
@@ -272,7 +294,6 @@ def data_iter(batch_size, doc, d_len, que, q_len, label, shuffle_data=True):
     yield steps
 
     oh_label = np.zeros([batch_size, 3], dtype=np.int)
-    order = range(batch_size)
     
     for s in range(steps):
 
@@ -292,6 +313,7 @@ def data_iter(batch_size, doc, d_len, que, q_len, label, shuffle_data=True):
             l = np.concatenate([label[head:], label[:end - N]], axis=0)
 
         if shuffle_data:
+            order = range(d.shape[0])
             np.random.shuffle(order)
             d = d[order]
             dl = dl[order]
