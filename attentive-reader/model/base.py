@@ -253,7 +253,7 @@ class BaseModel(object):
                 self.learning_rate, momentum=self.momentum, decay=self.decay, name='optimizer')
         return optim
 
-    def step(self, sess, data, fetch):
+    def step(self, sess, data, fetch, dropout_rate):
         """sess, data, fetch"""
         batch_idx, docs, d_end, queries, q_end, y = data
         rslt = sess.run( fetch,
@@ -328,7 +328,9 @@ class BaseModel(object):
                 _, summary_str, cost, accuracy, gs = self.step( sess, data, 
                                 [self.train_op, self.train_sum, self.loss, self.accuracy,
                                     self.gras,
-                                ])
+                                ],
+                                dropout_rate, 
+                                )
 
                 writer.add_summary(summary_str, counter)
                 running_acc += accuracy
@@ -363,7 +365,9 @@ class BaseModel(object):
                     for data in validate_iter:
                         batch_idx, docs, d_end, queries, q_end, y = data
                         validate_sum_str, cost, accuracy = self.step( sess, data, 
-                                                                     [self.validate_sum, self.loss, self.accuracy])
+                                                                     [self.validate_sum, self.loss, self.accuracy],
+                                                                     1.0,
+                                                                     )
                         writer.add_summary(validate_sum_str, vcounter)
                         running_acc += accuracy
                         running_loss += np.mean(cost)

@@ -154,7 +154,11 @@ class Selector(BaseModel):
         batch_idx, docs, d_end, queries, q_end, label = data
         
         # not the common word
+        mask = (label[:,1] == 0)
+        # print mask.mean()
         label = (label[:,1] == 0).astype(np.int)
+        label[mask] = 0.2
+        label[np.invert(mask)] = 0.8
         label = np.expand_dims(label, -1)
         
         rslt = sess.run( fetch,

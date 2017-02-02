@@ -41,7 +41,9 @@ def fetch_model(_type):
   elif _type == 'test':
     from model.test_model import EmbedReader as Reader
   elif _type == 'select':
-    from model.selector import Selector as Reader
+    from model.selector_model import Selector as Reader
+  elif _type == 'lstm':
+    from model.lstm_model import LSTMReader as Reader
   else:
     raise ValueError(_type)
 
