@@ -4,7 +4,7 @@ from base import BaseModel
 import numpy as np
 import h5py
 
-import time
+import time, os
 
 def fetch_data(fname='./FULL_BIG_BOOST.h5', val_size=3000):
     with h5py.File(fname, 'r') as hf:
@@ -86,6 +86,13 @@ class Selector(BaseModel):
 
         self.loss = tf.nn.sigmoid_cross_entropy_with_logits(
             score, self.label, name='loss')
+
+        point_2 = tf.constant(0.2, dtype=tf.float32, shape=[ self.batch_size, 1 ])
+        point_8 = tf.constant(0.2, dtype=tf.float32, shape=[ self.batch_size, 1 ])
+        where_one = tf.equal( self.label, 1 )
+        weight  = tf.select( where_one, point_2, point_8 )
+        self.loss *= weight
+
         loss_sum = tf.scalar_summary("T_loss", tf.reduce_mean(self.loss))
         
         self.prediction = tf.greater(score, 0, name='prediction')
@@ -154,11 +161,11 @@ class Selector(BaseModel):
         batch_idx, docs, d_end, queries, q_end, label = data
         
         # not the common word
-        mask = (label[:,1] == 0)
+        # mask = (label[:,1] == 0)
         # print mask.mean()
         label = (label[:,1] == 0).astype(np.int)
-        label[mask] = 0.2
-        label[np.invert(mask)] = 0.8
+        # label[mask] = 0.2
+        # label[np.invert(mask)] = 0.8
         label = np.expand_dims(label, -1)
         
         rslt = sess.run( fetch,
